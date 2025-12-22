@@ -1,0 +1,49 @@
+# API ключи и конфиденциальные данные
+.env
+*.env
+REPLICATE_API_TOKEN
+api_key.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+build/
+dist/
+*.egg-info/
+
+# Streamlit
+.streamlit/
+
+# Изображения (опционально)
+# *.jpg
+# *.png
+# *.jpeg
+# *.webp
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Docker
+.env
+docker-compose.override.yml
+
+# Database backups
+*.sql
+backup/
+
