@@ -1,3 +1,15 @@
+---
+title: Nano Banana Pro UI
+emoji: 🍌
+colorFrom: yellow
+colorTo: orange
+sdk: streamlit
+sdk_version: 1.52.2
+app_file: app.py
+pinned: false
+license: mit
+---
+
 # 🍌 Nano Banana Pro - Веб-интерфейс для генерации изображений
 
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
