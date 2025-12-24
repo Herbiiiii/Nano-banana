@@ -43,6 +43,43 @@ st.markdown("""
     .stButton>button:hover {
         background: linear-gradient(90deg, #FFA500, #FF8C00);
     }
+    
+    /* Исправление дрожания экрана */
+    .stApp {
+        overflow-x: hidden;
+    }
+    [data-testid="stAppViewContainer"] {
+        overflow-x: hidden;
+    }
+    /* Отключаем автоматические обновления, которые могут вызывать дрожание */
+    .element-container {
+        will-change: auto;
+    }
+    
+    /* Мобильная оптимизация */
+    @media (max-width: 768px) {
+        .main-header {
+            font-size: 2rem;
+        }
+        /* Улучшаем отображение слайдеров на мобильных */
+        .stSlider {
+            padding: 0.5rem 0;
+        }
+        /* Улучшаем боковую панель на мобильных */
+        [data-testid="stSidebar"] {
+            width: 100% !important;
+        }
+        /* Улучшаем колонки на мобильных */
+        [data-testid="column"] {
+            width: 100% !important;
+        }
+    }
+    
+    /* Улучшаем видимость параметров */
+    .stSlider label {
+        font-size: 0.9rem;
+        font-weight: 500;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -51,6 +88,10 @@ if 'generated_images' not in st.session_state:
     st.session_state.generated_images = []
 if 'api_key_set' not in st.session_state:
     st.session_state.api_key_set = False
+if 'active_generations' not in st.session_state:
+    st.session_state.active_generations = 0  # Количество активных генераций
+if 'max_concurrent_generations' not in st.session_state:
+    st.session_state.max_concurrent_generations = 3  # Максимум одновременных генераций
 
 def download_image(url, filename):
     """Скачивает изображение по URL"""
@@ -62,16 +103,37 @@ def download_image(url, filename):
         st.error(f"Ошибка при скачивании: {e}")
     return None
 
-def generate_image(prompt, image_input, api_token, **kwargs):
-    """Генерирует изображение через Replicate API"""
+def generate_image(prompt, image_input=None, images_list=None, api_token=None, **kwargs):
+    """Генерирует изображение через Replicate API
+    
+    Args:
+        prompt: Текстовый промпт
+        image_input: Одно референсное изображение (для обратной совместимости)
+        images_list: Список референсных изображений (до 4)
+        api_token: API ключ Replicate
+        **kwargs: Дополнительные параметры
+    """
     try:
         client = replicate.Client(api_token=api_token)
         
         # Подготовка параметров
         input_params = {
             "prompt": prompt,
-            "image": image_input,
         }
+        
+        # Поддержка множественных изображений (до 4)
+        # Для nano-banana-pro можно передать несколько изображений через параметр image (список)
+        if images_list and len(images_list) > 0:
+            # Если одно изображение
+            if len(images_list) == 1:
+                input_params["image"] = images_list[0]
+            else:
+                # Для нескольких изображений передаем список (модель поддерживает до 4)
+                input_params["image"] = images_list[:4]  # Ограничиваем до 4
+        elif image_input:
+            input_params["image"] = image_input
+        # Если изображение не передано (text-to-image режим), не добавляем параметр image
+        # Некоторые версии модели могут работать без изображения
         
         # Добавляем дополнительные параметры
         input_params.update(kwargs)
@@ -98,20 +160,28 @@ with st.sidebar:
     
     # API ключ
     st.subheader("🔑 API Ключ")
+    
+    # Проверяем, есть ли ключ в сессии (пользователь ввел его ранее в этой сессии)
+    if 'user_api_key' not in st.session_state:
+        st.session_state.user_api_key = ""
+    
     api_key_input = st.text_input(
         "Replicate API Token",
         type="password",
         help="Получите ключ на https://replicate.com/account/api-tokens",
-        value=os.getenv("REPLICATE_API_TOKEN", "")
+        value=st.session_state.user_api_key,
+        key="api_key_input"
     )
     
+    # Сохраняем ключ в сессии (только для текущего пользователя)
     if api_key_input:
-        os.environ["REPLICATE_API_TOKEN"] = api_key_input
+        st.session_state.user_api_key = api_key_input
         st.session_state.api_key_set = True
         st.success("✅ API ключ установлен")
     elif os.getenv("REPLICATE_API_TOKEN"):
+        # Fallback: если ключ установлен в Secrets Space (для администратора)
         st.session_state.api_key_set = True
-        st.info("✅ Используется ключ из переменной окружения")
+        st.info("ℹ️ Используется системный ключ (если установлен)")
     else:
         st.session_state.api_key_set = False
         st.warning("⚠️ Введите API ключ для продолжения")
@@ -121,27 +191,40 @@ with st.sidebar:
     # Дополнительные параметры
     st.subheader("🎛️ Параметры генерации")
     
-    # Расширенные настройки (если доступны в модели)
-    with st.expander("🔧 Расширенные настройки", expanded=False):
-        num_outputs = st.slider("Количество вариантов", 1, 4, 1)
-        guidance_scale = st.slider("Guidance Scale", 1.0, 20.0, 7.5, 0.5)
-        num_inference_steps = st.slider("Шаги генерации", 10, 100, 50, 5)
-        seed = st.number_input("Seed (для воспроизводимости)", value=None, min_value=0)
+    # Параметры всегда видны (не в expander) для лучшей мобильной поддержки
+    num_outputs = st.slider("Количество вариантов", 1, 4, 1, help="Сколько вариантов изображения сгенерировать")
+    guidance_scale = st.slider("Guidance Scale", 1.0, 20.0, 7.5, 0.5, help="Влияние промпта на результат (выше = сильнее)")
+    num_inference_steps = st.slider("Шаги генерации", 10, 100, 50, 5, help="Количество шагов обработки (больше = качественнее, но дольше)")
+    
+    # Seed в отдельном expander, так как он реже используется
+    with st.expander("🔧 Дополнительные настройки", expanded=False):
+        seed = st.number_input("Seed (для воспроизводимости)", value=None, min_value=0, help="Фиксированное значение для воспроизводимости результатов")
+    
+    # Показываем статус активных генераций
+    if st.session_state.active_generations > 0:
+        st.info(f"🔄 Активных генераций: {st.session_state.active_generations}/{st.session_state.max_concurrent_generations}")
+    else:
+        st.success(f"✅ Можно запустить до {st.session_state.max_concurrent_generations} генераций одновременно")
     
     st.divider()
     
     # Информация
     st.subheader("ℹ️ Информация")
     st.info("""
+    **Режимы работы:**
+    - 🖼️ **С референсом**: до 4 референсных изображений
+    - ✨ **Text-to-Image**: генерация только по промпту
+    
     **Как использовать:**
     1. Введите API ключ Replicate
-    2. Загрузите референсное изображение
-    3. Введите текстовый промпт
-    4. Нажмите "Сгенерировать"
+    2. Выберите режим генерации
+    3. Загрузите изображения (если режим с референсом)
+    4. Введите текстовый промпт
+    5. Нажмите "Сгенерировать"
     
     **Поддерживаемые форматы:**
     - JPG, PNG, WebP
-    - Максимальный размер: 10MB
+    - Максимальный размер: 10MB на файл
     """)
 
 # Основная область
@@ -150,47 +233,75 @@ col1, col2 = st.columns([1, 1])
 with col1:
     st.header("📤 Входные данные")
     
-    # Загрузка изображения
-    upload_method = st.radio(
-        "Способ загрузки изображения",
-        ["📁 Загрузить файл", "🔗 URL изображения"],
-        horizontal=True
+    # Режим работы: с референсом или text-to-image
+    generation_mode = st.radio(
+        "Режим генерации",
+        ["🖼️ С референсным изображением", "✨ Text-to-Image (без референса)"],
+        horizontal=True,
+        help="Выберите режим: с референсом или только по текстовому промпту"
     )
     
-    image_input = None
-    image_display = None
+    images_list = []
+    image_displays = []
     
-    if upload_method == "📁 Загрузить файл":
-        uploaded_file = st.file_uploader(
-            "Выберите референсное изображение",
-            type=["jpg", "jpeg", "png", "webp"],
-            help="Загрузите изображение, которое будет использовано как референс"
+    if generation_mode == "🖼️ С референсным изображением":
+        # Количество референсных изображений (до 4)
+        num_reference_images = st.slider(
+            "Количество референсных изображений", 
+            1, 4, 1,
+            help="Можно загрузить до 4 референсных изображений"
         )
         
-        if uploaded_file is not None:
-            image_display = Image.open(uploaded_file)
-            st.image(image_display, caption="Референсное изображение", width='stretch')
-            uploaded_file.seek(0)  # Сброс указателя файла
-            image_input = uploaded_file
-    
-    else:  # URL
-        image_url = st.text_input(
-            "URL изображения",
-            placeholder="https://example.com/image.jpg",
-            help="Вставьте прямую ссылку на изображение"
+        # Загрузка изображений
+        upload_method = st.radio(
+            "Способ загрузки",
+            ["📁 Загрузить файлы", "🔗 URL изображений"],
+            horizontal=True
         )
         
-        if image_url:
-            try:
-                response = requests.get(image_url, timeout=10)
-                if response.status_code == 200:
-                    image_display = Image.open(io.BytesIO(response.content))
-                    st.image(image_display, caption="Референсное изображение", width='stretch')
-                    image_input = image_url
-                else:
-                    st.error("Не удалось загрузить изображение по URL")
-            except Exception as e:
-                st.error(f"Ошибка при загрузке изображения: {e}")
+        if upload_method == "📁 Загрузить файлы":
+            uploaded_files = st.file_uploader(
+                f"Выберите референсные изображения (до {num_reference_images})",
+                type=["jpg", "jpeg", "png", "webp"],
+                accept_multiple_files=True,
+                help=f"Можно загрузить до {num_reference_images} изображений"
+            )
+            
+            if uploaded_files:
+                # Ограничиваем количество загруженных файлов
+                uploaded_files = uploaded_files[:num_reference_images]
+                
+                for idx, uploaded_file in enumerate(uploaded_files):
+                    image_display = Image.open(uploaded_file)
+                    image_displays.append(image_display)
+                    st.image(image_display, caption=f"Референсное изображение {idx + 1}", width='stretch')
+                    uploaded_file.seek(0)  # Сброс указателя файла
+                    images_list.append(uploaded_file)
+        
+        else:  # URL
+            for i in range(num_reference_images):
+                image_url = st.text_input(
+                    f"URL изображения {i + 1}",
+                    placeholder="https://example.com/image.jpg",
+                    help="Вставьте прямую ссылку на изображение",
+                    key=f"image_url_{i}"
+                )
+                
+                if image_url:
+                    try:
+                        response = requests.get(image_url, timeout=10)
+                        if response.status_code == 200:
+                            image_display = Image.open(io.BytesIO(response.content))
+                            image_displays.append(image_display)
+                            st.image(image_display, caption=f"Референсное изображение {i + 1}", width='stretch')
+                            images_list.append(image_url)
+                        else:
+                            st.error(f"Не удалось загрузить изображение {i + 1} по URL")
+                    except Exception as e:
+                        st.error(f"Ошибка при загрузке изображения {i + 1}: {e}")
+    
+    else:  # Text-to-Image режим
+        st.info("✨ Режим Text-to-Image: генерация только по текстовому промпту без референсного изображения")
     
     # Текстовый промпт
     st.subheader("✍️ Текстовый промпт")
@@ -231,10 +342,12 @@ with col2:
     if st.button("🎨 Сгенерировать изображение", type="primary", width='stretch'):
         if not st.session_state.api_key_set:
             st.error("❌ Пожалуйста, введите API ключ в боковой панели")
-        elif not image_input:
-            st.error("❌ Пожалуйста, загрузите или укажите URL изображения")
+        elif generation_mode == "🖼️ С референсным изображением" and len(images_list) == 0:
+            st.error("❌ Пожалуйста, загрузите или укажите URL референсного изображения")
         elif not prompt:
             st.error("❌ Пожалуйста, введите текстовый промпт")
+        elif st.session_state.active_generations >= st.session_state.max_concurrent_generations:
+            st.warning(f"⏳ Достигнут лимит одновременных генераций ({st.session_state.max_concurrent_generations}). Дождитесь завершения текущих генераций.")
         else:
             # Параметры для генерации
             gen_params = {}
@@ -250,13 +363,35 @@ with col2:
             if negative_prompt and negative_prompt.strip():
                 gen_params["negative_prompt"] = negative_prompt.strip()
             
+            # Увеличиваем счетчик активных генераций
+            st.session_state.active_generations += 1
+            
             # Генерация
-            result = generate_image(
-                prompt=prompt,
-                image_input=image_input,
-                api_token=api_key_input or os.getenv("REPLICATE_API_TOKEN"),
-                **gen_params
-            )
+            # Используем ключ из сессии пользователя или системный (если установлен)
+            user_token = st.session_state.get('user_api_key', '') or os.getenv("REPLICATE_API_TOKEN", "")
+            
+            try:
+                # Для text-to-image не передаем изображения
+                if generation_mode == "✨ Text-to-Image (без референса)":
+                    result = generate_image(
+                        prompt=prompt,
+                        image_input=None,
+                        images_list=None,
+                        api_token=user_token,
+                        **gen_params
+                    )
+                else:
+                    # Для режима с референсом передаем список изображений
+                    result = generate_image(
+                        prompt=prompt,
+                        image_input=None,
+                        images_list=images_list if images_list else None,
+                        api_token=user_token,
+                        **gen_params
+                    )
+            finally:
+                # Уменьшаем счетчик после завершения (успешного или с ошибкой)
+                st.session_state.active_generations = max(0, st.session_state.active_generations - 1)
             
             if result:
                 # Сохранение в историю
