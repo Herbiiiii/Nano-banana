@@ -54,6 +54,7 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
             # Получаем API ключ из request_data (передан в запросе) или используем глобальный
             # ВАЖНО: Ключи пользователей НЕ сохраняются в БД для безопасности
             api_key_from_request = request_data.get('api_key')
+            logger.info(f"[GENERATION] В process_generation_async: ключ из запроса: {'передан' if api_key_from_request else 'не передан'}, глобальный: {'настроен' if settings.REPLICATE_API_TOKEN else 'не настроен'}")
             api_key = get_user_replicate_key(user_id, api_key_from_request)
             if not api_key:
                 raise ValueError("API ключ Replicate не найден. Укажите ключ в запросе или используйте глобальный ключ.")

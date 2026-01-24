@@ -8,6 +8,74 @@ let aspectRatioAutoSelected = false; // Флаг для автоматическ
 let galleryUpdateInProgress = false; // Флаг для предотвращения параллельных обновлений галереи
 let lastGalleryHash = null; // Хеш последнего состояния галереи для предотвращения ненужных обновлений
 
+// Универсальные функции для работы с хранилищем (localStorage с fallback на sessionStorage)
+// Используем localStorage для надежности на мобильных устройствах и в приватном режиме
+function getStorage() {
+    try {
+        // Пробуем использовать localStorage (более надежно)
+        if (typeof(Storage) !== "undefined" && localStorage) {
+            // Проверяем доступность через тестовую запись
+            const testKey = '__storage_test__';
+            localStorage.setItem(testKey, 'test');
+            localStorage.removeItem(testKey);
+            return localStorage;
+        }
+    } catch (e) {
+        console.warn('[STORAGE] localStorage недоступен, пробуем sessionStorage:', e);
+    }
+    
+    try {
+        // Fallback на sessionStorage
+        if (typeof(Storage) !== "undefined" && sessionStorage) {
+            const testKey = '__storage_test__';
+            sessionStorage.setItem(testKey, 'test');
+            sessionStorage.removeItem(testKey);
+            return sessionStorage;
+        }
+    } catch (e) {
+        console.error('[STORAGE] Ни localStorage, ни sessionStorage недоступны:', e);
+        return null;
+    }
+    
+    return null;
+}
+
+function getApiKey() {
+    const storage = getStorage();
+    if (!storage) return null;
+    try {
+        return storage.getItem('replicateApiKey');
+    } catch (e) {
+        console.error('[STORAGE] Ошибка чтения ключа:', e);
+        return null;
+    }
+}
+
+function setApiKey(key) {
+    const storage = getStorage();
+    if (!storage) {
+        console.error('[STORAGE] Хранилище недоступно, ключ не может быть сохранен');
+        return false;
+    }
+    try {
+        if (key) {
+            storage.setItem('replicateApiKey', key);
+            console.log('[STORAGE] API ключ сохранен в', storage === localStorage ? 'localStorage' : 'sessionStorage');
+        } else {
+            storage.removeItem('replicateApiKey');
+            console.log('[STORAGE] API ключ удален');
+        }
+        return true;
+    } catch (e) {
+        console.error('[STORAGE] Ошибка сохранения ключа:', e);
+        return false;
+    }
+}
+
+function removeApiKey() {
+    return setApiKey(null);
+}
+
 // Обновление превью референсных изображений
 function updateReferencePreview() {
     const preview = document.getElementById('referencePreview');
@@ -546,14 +614,20 @@ async function loadUserInfo() {
 // Проверка статуса API ключа
 async function checkApiKeyStatus() {
     // ВАЖНО: Ключи НЕ сохраняются на сервере, проверяем только локально
-    const apiKey = sessionStorage.getItem('replicateApiKey');
+    const apiKey = getApiKey();
     const statusDiv = document.getElementById('apiKeyStatus');
+    const storage = getStorage();
+    const storageType = storage === localStorage ? 'localStorage' : (storage === sessionStorage ? 'sessionStorage' : 'недоступно');
     
     if (statusDiv) {
         if (apiKey) {
-            statusDiv.innerHTML = '<span class="text-success"><i class="fas fa-check-circle me-1"></i>API ключ сохранен локально (не на сервере)</span>';
+            statusDiv.innerHTML = `<span class="text-success"><i class="fas fa-check-circle me-1"></i>API ключ сохранен локально (${storageType}, не на сервере)</span>`;
         } else {
-            statusDiv.innerHTML = '<span class="text-muted"><i class="fas fa-info-circle me-1"></i>API ключ не сохранен. Ключи не хранятся на сервере для вашей безопасности.</span>';
+            if (!storage) {
+                statusDiv.innerHTML = '<span class="text-warning"><i class="fas fa-exclamation-triangle me-1"></i>Хранилище недоступно. Ключ не может быть сохранен. Проверьте настройки браузера.</span>';
+            } else {
+                statusDiv.innerHTML = '<span class="text-muted"><i class="fas fa-info-circle me-1"></i>API ключ не сохранен. Ключи не хранятся на сервере для вашей безопасности.</span>';
+            }
         }
     }
 }
@@ -732,11 +806,16 @@ async function handleGenerate(e) {
             formData.reference_images = referenceImages.map(ref => ref.dataUrl);
         }
         
-        // Добавляем API ключ из sessionStorage (если есть)
+        // Добавляем API ключ из хранилища (если есть)
         // ВАЖНО: Ключи НЕ сохраняются на сервере, передаются только в запросе
-        const apiKey = sessionStorage.getItem('replicateApiKey');
+        const apiKey = getApiKey();
         if (apiKey) {
             formData.api_key = apiKey;
+            const storage = getStorage();
+            const storageType = storage === localStorage ? 'localStorage' : 'sessionStorage';
+            console.log(`[GENERATE] API ключ найден в ${storageType}, добавляем в запрос`);
+        } else {
+            console.warn('[GENERATE] API ключ НЕ найден в хранилище! Генерация может не работать.');
         }
 
         // Отправка запроса
@@ -997,13 +1076,24 @@ async function handleApiKeySave(e) {
     const apiKey = document.getElementById('apiKeyInput').value;
 
     // ВАЖНО: Ключи НЕ сохраняются на сервере для безопасности
-    // Сохраняем только локально в sessionStorage (очищается при закрытии браузера)
-    if (apiKey) {
-        sessionStorage.setItem('replicateApiKey', apiKey);
-        showToast('API ключ сохранен локально (не сохраняется на сервере для вашей безопасности)', 'success');
+    // Сохраняем локально в localStorage (более надежно на мобильных устройствах)
+    const storage = getStorage();
+    if (!storage) {
+        showToast('Ошибка: хранилище недоступно. Проверьте настройки браузера (приватный режим может блокировать сохранение)', 'error');
+        return;
+    }
+    
+    const storageType = storage === localStorage ? 'localStorage' : 'sessionStorage';
+    const saved = setApiKey(apiKey);
+    
+    if (saved) {
+        if (apiKey) {
+            showToast(`API ключ сохранен локально в ${storageType} (не сохраняется на сервере для вашей безопасности)`, 'success');
+        } else {
+            showToast('API ключ удален', 'info');
+        }
     } else {
-        sessionStorage.removeItem('replicateApiKey');
-        showToast('API ключ удален', 'info');
+        showToast('Ошибка сохранения ключа. Проверьте настройки браузера.', 'error');
     }
     
     // Закрываем модальное окно
@@ -1022,8 +1112,12 @@ async function handleApiKeyDelete() {
     if (!confirm('Удалить API ключ из локального хранилища?')) return;
 
     // ВАЖНО: Ключи НЕ сохраняются на сервере, удаляем только локально
-    sessionStorage.removeItem('replicateApiKey');
-    showToast('API ключ удален из локального хранилища', 'success');
+    const removed = removeApiKey();
+    if (removed) {
+        showToast('API ключ удален из локального хранилища', 'success');
+    } else {
+        showToast('Ошибка удаления ключа', 'error');
+    }
     checkApiKeyStatus();
 }
 
