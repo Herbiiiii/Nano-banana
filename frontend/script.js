@@ -1209,8 +1209,8 @@ async function loadGallery() {
                     <div class="position-relative image-container" data-gen-id="${gen.id}" style="height: 350px; overflow: hidden !important; background: #1a1a2e; cursor: ${gen.status === 'completed' && gen.result_url ? 'pointer' : 'default'}; border-radius: 0 0 12px 12px !important; position: relative;" ${gen.status === 'completed' && gen.result_url ? `onclick="openFullscreenImage('${gen.result_url.replace(/'/g, "\\'")}', '${(gen.prompt || '').replace(/'/g, "\\'").replace(/"/g, '&quot;')}')"` : ''}>
                         ${gen.status === 'completed' && gen.result_url ? 
                             `<img src="${gen.result_url}" class="card-img-top generation-image" data-gen-id="${gen.id}" style="height: 350px; width: 100%; object-fit: cover; position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: 1; display: block; border-radius: 0 0 12px 12px;" alt="Generated image" 
-                                onerror="(function(img, genId) { console.error('[IMAGE] Ошибка загрузки изображения для генерации', genId); console.error('[IMAGE] URL:', img.src); img.style.display='none'; const container = img.closest('.image-container'); const errorDiv = container ? container.querySelector('.image-error') : null; if (errorDiv) { errorDiv.style.setProperty('display', 'flex', 'important'); errorDiv.style.zIndex='10'; } })(this, ${gen.id});" 
-                                onload="(function(img, genId) { console.log('[IMAGE] Изображение загружено для генерации', genId); console.log('[IMAGE] URL:', img.src); const container = img.closest('.image-container'); const errorDiv = container ? container.querySelector('.image-error') : null; if (errorDiv) { errorDiv.style.setProperty('display', 'none', 'important'); errorDiv.style.zIndex='1'; } img.style.display='block'; img.style.zIndex='1'; })(this, ${gen.id});">` :
+                                onerror="(function(img, genId) { console.error('[IMAGE] Ошибка загрузки изображения для генерации', genId); console.error('[IMAGE] URL:', img.src); img.style.display='none'; const container = img.closest('.image-container'); const errorDiv = container ? container.querySelector('.image-error') : null; if (errorDiv) { errorDiv.style.setProperty('display', 'flex', 'important'); errorDiv.style.zIndex='2'; } })(this, ${gen.id});" 
+                                onload="(function(img, genId) { console.log('[IMAGE] Изображение загружено для генерации', genId); console.log('[IMAGE] URL:', img.src); const container = img.closest('.image-container'); const errorDiv = container ? container.querySelector('.image-error') : null; if (errorDiv) { errorDiv.style.setProperty('display', 'none', 'important'); errorDiv.style.zIndex='2'; } img.style.display='block'; img.style.zIndex='1'; })(this, ${gen.id});">` :
                             `<div class="position-absolute top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center" style="z-index: 1; background: linear-gradient(135deg, #1a1a2e 0%, #252547 100%); border-radius: 0 0 12px 12px;">
                                 ${gen.status === 'failed' ? 
                                     `<div class="text-center">
@@ -1227,14 +1227,14 @@ async function loadGallery() {
                                 }
                             </div>`
                         }
-                        <div class="bg-dark d-flex align-items-center justify-content-center image-error position-absolute top-0 start-0 w-100 h-100" style="display: none !important; z-index: 10; background: linear-gradient(135deg, #1a1a2e 0%, #252547 100%) !important; pointer-events: none;">
+                        <div class="bg-dark d-flex align-items-center justify-content-center image-error position-absolute top-0 start-0 w-100 h-100" style="display: none !important; z-index: 2; background: linear-gradient(135deg, #1a1a2e 0%, #252547 100%) !important; pointer-events: none;">
                             <div class="text-center">
                                 <i class="fas fa-exclamation-triangle text-warning mb-2" style="font-size: 2rem;"></i>
                                 <p class="text-light mb-0">Ошибка загрузки изображения</p>
                                 <small class="text-muted">Попробуйте обновить страницу</small>
                             </div>
                         </div>
-                        <div class="position-absolute top-0 end-0 m-2" style="z-index: 4; pointer-events: none; display: flex; flex-direction: column; align-items: flex-end; gap: 0.25rem;">
+                        <div class="position-absolute top-0 end-0 m-2" style="z-index: 5; pointer-events: none; display: flex; flex-direction: column; align-items: flex-end; gap: 0.25rem;">
                             <div style="display: flex; align-items: center; gap: 0.25rem;">
                                 <button class="btn btn-sm generation-status-badge" disabled style="opacity: 1 !important; background: ${gen.status === 'completed' ? 'linear-gradient(135deg, rgba(74, 85, 104, 0.7) 0%, rgba(72, 187, 120, 0.5) 100%)' : gen.status === 'failed' ? 'linear-gradient(135deg, rgba(74, 85, 104, 0.7) 0%, rgba(229, 62, 62, 0.5) 100%)' : 'linear-gradient(135deg, rgba(74, 85, 104, 0.7) 0%, rgba(102, 126, 234, 0.5) 100%)'} !important; border: 1px solid ${gen.status === 'completed' ? 'rgba(72, 187, 120, 0.6)' : gen.status === 'failed' ? 'rgba(229, 62, 62, 0.6)' : 'rgba(102, 126, 234, 0.6)'} !important; padding: 0.25rem 0.5rem; color: #ffffff !important; font-weight: 700; cursor: default; pointer-events: none; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);">${gen.status === 'completed' ? 'Завершено' : gen.status === 'running' ? 'Генерируется' : gen.status === 'pending' ? 'В очереди' : 'Ошибка'}</button>
                                 ${(gen.status === 'completed' || gen.status === 'failed') ? 
@@ -1247,7 +1247,7 @@ async function loadGallery() {
                                 `<span class="badge bg-warning text-dark" style="font-size: 0.65rem; padding: 0.2rem 0.4rem; font-weight: 600; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);">Осталось: ${gen.daysLeft} ${gen.daysText}</span>` : ''
                             }
                         </div>
-                        <div class="prompt-and-buttons-overlay position-absolute bottom-0 start-0 w-100" style="z-index: 3; background: linear-gradient(to top, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.3) 50%, rgba(0,0,0,0) 100%); padding: 1rem; border-radius: 0 0 12px 12px; backdrop-filter: blur(6px); overflow: hidden;">
+                        <div class="prompt-and-buttons-overlay position-absolute bottom-0 start-0 w-100" style="z-index: 5; background: linear-gradient(to top, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.3) 50%, rgba(0,0,0,0) 100%); padding: 1rem; border-radius: 0 0 12px 12px; backdrop-filter: blur(6px); overflow: hidden;">
                             <p class="text-light mb-2 small prompt-text" style="font-size: 0.7225rem; line-height: 1.19; padding: 0.5rem; border-radius: 4px; max-width: 100%; overflow-x: auto; overflow-y: hidden; white-space: nowrap;">${(gen.prompt || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
                                 <div class="d-flex gap-2 justify-content-center align-items-center">
                                     ${gen.status === 'completed' && gen.result_url ? 
@@ -1284,7 +1284,7 @@ async function loadGallery() {
                     const errorDiv = container.querySelector('.image-error');
                     if (errorDiv) {
                         errorDiv.style.setProperty('display', 'none', 'important');
-                        errorDiv.style.zIndex = '1';
+                        errorDiv.style.zIndex = '2';
                     }
                     img.style.display = 'block';
                     img.style.zIndex = '1';
@@ -1295,7 +1295,7 @@ async function loadGallery() {
                     const errorDiv = container.querySelector('.image-error');
                     if (errorDiv) {
                         errorDiv.style.setProperty('display', 'flex', 'important');
-                        errorDiv.style.zIndex = '10';
+                        errorDiv.style.zIndex = '2';
                     }
                     img.style.display = 'none';
                 }
