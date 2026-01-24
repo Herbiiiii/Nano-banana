@@ -82,12 +82,15 @@ services:
       - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin123}
       - MINIO_BUCKET=nano-banana-images
-      - MINIO_USE_SSL=false
-      - MINIO_PUBLIC_URL=http://localhost:9000
+      - MINIO_USE_SSL=${MINIO_USE_SSL:-false}
+      - MINIO_PUBLIC_URL=${MINIO_PUBLIC_URL:-http://localhost:9000}
       - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
       - ALGORITHM=HS256
       - REPLICATE_API_TOKEN=${REPLICATE_API_TOKEN:-}
-      - MAX_WORKERS=3
+      - MAX_WORKERS=${MAX_WORKERS:-3}
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      - API_URL=${API_URL:-http://localhost:8000}
+      - MINIO_CONSOLE_URL=${MINIO_CONSOLE_URL:-http://localhost:9001}
     depends_on:
       postgres:
         condition: service_healthy

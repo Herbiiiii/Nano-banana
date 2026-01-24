@@ -89,6 +89,19 @@ async def startup_event():
     except Exception as e:
         logger.error(f"[STARTUP] Ошибка инициализации БД: {e}")
 
+# Health check endpoint (должен быть до статических файлов)
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+@app.get("/api")
+async def api_info():
+    return {
+        "message": "Nano Banana Pro API",
+        "version": "1.0.0",
+        "docs": "/docs"
+    }
+
 # Подключение роутеров
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(images.router, prefix="/api/v1")
@@ -121,16 +134,4 @@ if os.path.exists(frontend_path):
     
     app.mount("/", NoCacheStaticFiles(directory=frontend_path, html=True), name="frontend")
     logger.info(f"[STARTUP] Статические файлы подключены из {frontend_path} (кэширование отключено)")
-
-@app.get("/api")
-async def api_info():
-    return {
-        "message": "Nano Banana Pro API",
-        "version": "1.0.0",
-        "docs": "/docs"
-    }
-
-@app.get("/health")
-async def health():
-    return {"status": "ok"}
 
