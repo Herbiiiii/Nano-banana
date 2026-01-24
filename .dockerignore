@@ -32,8 +32,8 @@ Thumbs.db
 desktop.ini
 
 # Docker
-docker-compose.yml
-Dockerfile
+# docker-compose.yml - не нужен в образе (используется только для запуска)
+# Dockerfile - нужен для сборки, не игнорируем
 .dockerignore
 
 # Documentation

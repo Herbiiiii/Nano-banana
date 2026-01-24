@@ -10,10 +10,10 @@ services:
     image: postgres:15-alpine
     container_name: nano_banana_postgres
     environment:
-      POSTGRES_DB: nano_banana
-      POSTGRES_USER: nano_banana_user
-      # ВАЖНО: Измените пароль для продакшена!
-      POSTGRES_PASSWORD: nano_banana_pass
+      POSTGRES_DB: ${POSTGRES_DB:-nano_banana}
+      POSTGRES_USER: ${POSTGRES_USER:-nano_banana_user}
+      # ВАЖНО: Измените пароль для продакшена через .env!
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nano_banana_pass}
     ports:
       - "5432:5432"
     volumes:
@@ -32,9 +32,9 @@ services:
     container_name: nano_banana_minio
     command: server /data --console-address ":9001" --address ":9000"
     environment:
-      # ВАЖНО: Измените эти значения для продакшена!
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin123
+      # ВАЖНО: Измените эти значения для продакшена через .env!
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin123}
       MINIO_BROWSER_REDIRECT_URL: http://localhost:9001
     ports:
       - "9000:9000"  # API
@@ -58,7 +58,7 @@ services:
     entrypoint: >
       /bin/sh -c "
       sleep 5;
-      mc alias set myminio http://minio:9000 minioadmin minioadmin123;
+      mc alias set myminio http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin123};
       mc mb myminio/nano-banana-images --ignore-existing;
       mc anonymous set download myminio/nano-banana-images;
       exit 0;
@@ -75,12 +75,12 @@ services:
     environment:
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
-      - POSTGRES_DB=nano_banana
-      - POSTGRES_USER=nano_banana_user
-      - POSTGRES_PASSWORD=nano_banana_pass
+      - POSTGRES_DB=${POSTGRES_DB:-nano_banana}
+      - POSTGRES_USER=${POSTGRES_USER:-nano_banana_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-nano_banana_pass}
       - MINIO_ENDPOINT=minio:9000
-      - MINIO_ACCESS_KEY=minioadmin
-      - MINIO_SECRET_KEY=minioadmin123
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin123}
       - MINIO_BUCKET=nano-banana-images
       - MINIO_USE_SSL=false
       - MINIO_PUBLIC_URL=http://localhost:9000
