@@ -1,6 +1,6 @@
 // Конфигурация
-// Измените URL если API запущен на другом адресе
-const API_URL = 'http://localhost:8000/api/v1';
+// Используем относительный путь для работы с любым доменом
+const API_URL = '/api/v1';
 let authToken = null;
 let currentUser = null;
 let referenceImages = []; // Массив объектов {file, dataUrl, id}
