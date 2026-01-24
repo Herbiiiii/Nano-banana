@@ -1,0 +1,797 @@
+/* Стили для Nano Banana Pro */
+
+/* CSS переменные для темной и светлой темы */
+:root {
+    --bg-primary: #1a1a2e;
+    --bg-secondary: #252547;
+    --bg-hover: #2d2d5a;
+    --border-color: #667eea;
+    --border-hover: #764ba2;
+    --text-primary: #e0e0e0;
+    --text-secondary: #b0b0b0;
+    --accent-primary: #667eea;
+    --accent-secondary: #764ba2;
+    --metal-gray: #4a5568;
+    --metal-gray-light: #718096;
+    --metal-gray-dark: #2d3748;
+    --shadow: rgba(102, 126, 234, 0.3);
+}
+
+[data-bs-theme="light"] {
+    --bg-primary: #f7fafc;
+    --bg-secondary: #edf2f7;
+    --bg-hover: #e2e8f0;
+    --border-color: #667eea;
+    --border-hover: #764ba2;
+    --text-primary: #2d3748;
+    --text-secondary: #4a5568;
+    --accent-primary: #667eea;
+    --accent-secondary: #764ba2;
+    --metal-gray: #718096;
+    --metal-gray-light: #a0aec0;
+    --metal-gray-dark: #4a5568;
+    --shadow: rgba(102, 126, 234, 0.2);
+}
+
+body {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    transition: background 0.3s ease;
+}
+
+[data-bs-theme="light"] body {
+    background: linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%);
+}
+
+.navbar-brand {
+    font-weight: bold;
+    font-size: 1.5rem;
+}
+
+.card {
+    border: none;
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.card-header {
+    border-bottom: 2px solid rgba(102, 126, 234, 0.2);
+    background: linear-gradient(135deg, var(--metal-gray) 0%, var(--metal-gray-dark) 100%) !important;
+    color: var(--text-primary) !important;
+}
+
+.card-header.bg-primary {
+    background: linear-gradient(135deg, var(--metal-gray) 0%, var(--metal-gray-dark) 100%) !important;
+    border-bottom: 2px solid var(--border-color);
+}
+
+.card-header h5, .card-header .h5 {
+    color: var(--text-primary) !important;
+    font-weight: 600;
+}
+
+/* Кнопки в стиле dropdown - темный металлический с фиолетовыми акцентами */
+.btn-primary {
+    background: linear-gradient(135deg, var(--metal-gray) 0%, var(--metal-gray-dark) 100%);
+    border: 2px solid var(--border-color);
+    color: var(--text-primary);
+    font-weight: 600;
+    transition: all 0.3s;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.btn-primary:hover {
+    background: linear-gradient(135deg, var(--metal-gray-light) 0%, var(--metal-gray) 100%);
+    border-color: var(--border-hover);
+    color: var(--text-primary);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px var(--shadow);
+}
+
+.btn-primary:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* Специальный градиент для кнопки генерации */
+#sendToGenerate {
+    background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 50%, var(--accent-primary) 100%);
+    border: 2px solid var(--border-color);
+    color: var(--text-primary);
+    font-weight: 700;
+    font-size: 1.1rem;
+    padding: 0.75rem 1.5rem;
+    box-shadow: 0 4px 12px var(--shadow), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    background-size: 200% 100%;
+    animation: gradient-shift 3s ease infinite;
+    transition: all 0.3s;
+}
+
+@keyframes gradient-shift {
+    0%, 100% {
+        background-position: 0% 50%;
+    }
+    50% {
+        background-position: 100% 50%;
+    }
+}
+
+#sendToGenerate:hover {
+    background: linear-gradient(135deg, var(--accent-secondary) 0%, var(--accent-primary) 50%, var(--accent-secondary) 100%);
+    border-color: var(--border-hover);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px var(--shadow), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    background-size: 200% 100%;
+}
+
+#sendToGenerate:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3), inset 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+#sendToGenerate:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    animation: none;
+}
+
+.btn-warning {
+    background: linear-gradient(135deg, var(--metal-gray) 0%, var(--metal-gray-dark) 100%);
+    border: 2px solid var(--border-color);
+    color: var(--text-primary);
+    font-weight: 600;
+    transition: all 0.3s;
+}
+
+.btn-warning:hover {
+    background: linear-gradient(135deg, var(--metal-gray-light) 0%, var(--metal-gray) 100%);
+    border-color: var(--border-hover);
+    color: var(--text-primary);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px var(--shadow);
+}
+
+.btn-danger {
+    background: linear-gradient(135deg, #6b2d2d 0%, #4a1f1f 100%);
+    border: 2px solid #e53e3e;
+    color: var(--text-primary);
+    font-weight: 600;
+    transition: all 0.3s;
+}
+
+.btn-danger:hover {
+    background: linear-gradient(135deg, #7a3535 0%, #5a2525 100%);
+    border-color: #fc8181;
+    color: var(--text-primary);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(229, 62, 62, 0.3);
+}
+
+.btn-outline-primary {
+    border: 2px solid var(--border-color);
+    color: var(--accent-primary);
+    background: transparent;
+    font-weight: 600;
+    transition: all 0.3s;
+}
+
+.btn-outline-primary:hover {
+    background: linear-gradient(135deg, var(--metal-gray) 0%, var(--metal-gray-dark) 100%);
+    border-color: var(--border-hover);
+    color: var(--text-primary);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px var(--shadow);
+}
+
+/* Стили для кнопок режима генерации */
+.btn-check:checked + .btn-outline-primary {
+    background: linear-gradient(135deg, var(--metal-gray) 0%, var(--metal-gray-dark) 100%);
+    border-color: var(--border-hover);
+    color: var(--text-primary);
+    box-shadow: 0 4px 12px var(--shadow);
+}
+
+.btn-check:checked + .btn-outline-primary:hover {
+    background: linear-gradient(135deg, var(--metal-gray-light) 0%, var(--metal-gray) 100%);
+    border-color: var(--border-hover);
+}
+
+.btn-outline-light {
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    color: var(--text-primary);
+    background: transparent;
+    font-weight: 600;
+    transition: all 0.3s;
+}
+
+.btn-outline-light:hover {
+    background: linear-gradient(135deg, var(--metal-gray) 0%, var(--metal-gray-dark) 100%);
+    border-color: var(--border-color);
+    color: var(--text-primary);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px var(--shadow);
+}
+
+.btn-light {
+    background: linear-gradient(135deg, var(--metal-gray) 0%, var(--metal-gray-dark) 100%);
+    border: 2px solid var(--border-color);
+    color: var(--text-primary);
+    font-weight: 600;
+    transition: all 0.3s;
+}
+
+.btn-light:hover {
+    background: linear-gradient(135deg, var(--metal-gray-light) 0%, var(--metal-gray) 100%);
+    border-color: var(--border-hover);
+    color: var(--text-primary);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px var(--shadow);
+}
+
+.btn-sm {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.875rem;
+    font-weight: bold;
+}
+
+.img-thumbnail {
+    border-radius: 8px;
+}
+
+#imageGrid .card {
+    transition: transform 0.2s;
+}
+
+#imageGrid .card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+}
+
+.spinner-border {
+    width: 1rem;
+    height: 1rem;
+}
+
+/* Кастомный dropdown для соотношений сторон с SVG иконками */
+.custom-dropdown {
+    position: relative;
+    width: 100%;
+    overflow: visible; /* Разрешаем видимость скроллбара */
+    z-index: 1000; /* Убеждаемся что dropdown выше других элементов */
+}
+
+.custom-dropdown-selected {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    background-color: var(--bg-primary);
+    border: 2px solid var(--border-color);
+    border-radius: 0.5rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    min-height: 50px;
+}
+
+.custom-dropdown-selected:hover {
+    border-color: var(--border-hover);
+    box-shadow: 0 0 0 0.2rem var(--shadow);
+    background-color: var(--bg-secondary);
+}
+
+.custom-dropdown-selected.active {
+    border-color: var(--border-hover);
+    box-shadow: 0 0 0 0.2rem var(--shadow);
+    background-color: var(--bg-secondary);
+}
+
+.custom-dropdown-icon {
+    width: 36px;
+    height: 36px;
+    margin-right: 12px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.custom-dropdown-icon img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.custom-dropdown-text {
+    flex: 1;
+    color: var(--text-primary);
+    font-size: 15px;
+    font-weight: 500;
+}
+
+.custom-dropdown-arrow {
+    margin-left: auto;
+    color: var(--accent-primary);
+    transition: transform 0.2s;
+    font-size: 14px;
+}
+
+.custom-dropdown-selected.active .custom-dropdown-arrow {
+    transform: rotate(180deg);
+    color: var(--accent-secondary);
+}
+
+.custom-dropdown-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    background-color: var(--bg-primary);
+    border: 2px solid var(--border-color);
+    border-radius: 0.5rem;
+    box-shadow: 0 0.5rem 1.5rem rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    max-height: 250px; /* Высота для 3-4 элементов (примерно 4 * 50px + padding) */
+    overflow-y: auto;
+    overflow-x: hidden;
+    display: none;
+    margin-top: 0;
+    padding: 0.5rem 0;
+    padding-bottom: 0.5rem;
+    padding-right: 0;
+    scroll-behavior: smooth;
+    /* Убеждаемся что скролл работает */
+    -webkit-overflow-scrolling: touch;
+    /* Исправляем обрезание */
+    box-sizing: border-box;
+    margin-bottom: 0;
+}
+
+.custom-dropdown-menu.show {
+    display: block;
+}
+
+/* Стили для скроллбара в темном меню */
+.custom-dropdown {
+    position: relative;
+    overflow: visible; /* Разрешаем видимость скроллбара */
+}
+
+.custom-dropdown-menu::-webkit-scrollbar {
+    width: 14px; /* Увеличена ширина для лучшей видимости и удобства */
+}
+
+.custom-dropdown-menu::-webkit-scrollbar-track {
+    background: rgba(102, 126, 234, 0.1);
+    border-radius: 7px;
+    margin: 0.25rem 0;
+    border: 1px solid rgba(102, 126, 234, 0.2);
+}
+
+.custom-dropdown-menu::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
+    border-radius: 7px;
+    border: 2px solid rgba(102, 126, 234, 0.3);
+    min-height: 40px; /* Увеличена минимальная высота для удобства */
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.custom-dropdown-menu::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, var(--accent-secondary) 0%, var(--accent-primary) 100%);
+    border-color: rgba(102, 126, 234, 0.5);
+    box-shadow: 0 2px 6px rgba(102, 126, 234, 0.4);
+}
+
+.custom-dropdown-menu::-webkit-scrollbar-thumb:active {
+    background: linear-gradient(180deg, var(--accent-secondary) 0%, var(--accent-primary) 100%);
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+.custom-dropdown-menu::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, var(--accent-secondary) 0%, var(--accent-primary) 100%);
+}
+
+/* Для Firefox */
+.custom-dropdown-menu {
+    scrollbar-width: auto; /* Изменено с thin на auto для более заметного скроллбара */
+    scrollbar-color: var(--accent-primary) rgba(102, 126, 234, 0.1);
+}
+
+/* Улучшаем видимость скроллбара */
+.custom-dropdown-menu:hover::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, var(--accent-secondary) 0%, var(--accent-primary) 100%);
+}
+
+.custom-dropdown-group {
+    padding: 0.25rem 0; /* Уменьшаем padding для компактности */
+}
+
+.custom-dropdown-group-label {
+    padding: 0.75rem 1rem;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--accent-primary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    background-color: rgba(102, 126, 234, 0.1);
+    margin: 0.25rem 0;
+}
+
+.custom-dropdown-item {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem 1rem; /* Оптимальный padding */
+    cursor: pointer;
+    transition: all 0.2s;
+    color: var(--text-primary);
+    font-size: 14px;
+    min-height: 50px; /* Уменьшаем для компактности */
+    white-space: nowrap; /* Предотвращаем перенос текста */
+}
+
+.custom-dropdown-item:hover {
+    background-color: rgba(102, 126, 234, 0.2);
+    color: var(--text-primary);
+}
+
+.custom-dropdown-item.selected {
+    background-color: rgba(102, 126, 234, 0.3);
+    color: var(--text-primary);
+    font-weight: 600;
+    border-left: 3px solid var(--accent-primary);
+}
+
+.custom-dropdown-item.user-child {
+    padding-left: 2.5rem;
+    color: #9d8ef0;
+    font-size: 13px;
+    font-style: italic;
+}
+
+.custom-dropdown-item.user-child:hover {
+    background-color: rgba(157, 142, 240, 0.2);
+    color: #b8a9f5;
+}
+
+.custom-dropdown-item-icon {
+    width: 63px; /* Уменьшено на 10% (70 * 0.9 = 63) */
+    height: 63px; /* Уменьшено на 10% (70 * 0.9 = 63) */
+    margin-right: 12px;
+    flex-shrink: 0;
+    object-fit: contain;
+    display: block;
+    min-width: 63px; /* Минимальная ширина для предотвращения сжатия */
+    min-height: 63px; /* Минимальная высота для предотвращения сжатия */
+}
+
+/* Улучшенные стили для референсных изображений */
+#referencePreview .position-relative {
+    transition: transform 0.2s;
+}
+
+#referencePreview .position-relative:hover {
+    transform: scale(1.05);
+}
+
+#referencePreview .btn-danger {
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.8;
+}
+
+#referencePreview .btn-danger:hover {
+    opacity: 1;
+}
+
+/* Стили для drag and drop референсных изображений */
+.reference-item {
+    transition: all 0.2s;
+    user-select: none;
+}
+
+.reference-item.dragging {
+    opacity: 0.5;
+    transform: scale(0.95);
+    cursor: grabbing !important;
+}
+
+.reference-item.drag-over {
+    border: 2px dashed var(--border-color);
+    transform: scale(1.1);
+    z-index: 1000;
+}
+
+.reference-item:hover {
+    transform: scale(1.05);
+    box-shadow: 0 4px 8px var(--shadow);
+}
+
+/* Стили для форм в темной/светлой теме */
+.form-control, .form-select {
+    background-color: var(--bg-primary);
+    border: 2px solid var(--border-color);
+    color: var(--text-primary);
+    transition: all 0.2s;
+}
+
+.form-control:focus, .form-select:focus {
+    background-color: var(--bg-secondary);
+    border-color: var(--border-hover);
+    color: var(--text-primary);
+    box-shadow: 0 0 0 0.2rem var(--shadow);
+}
+
+.form-control::placeholder {
+    color: var(--text-secondary);
+    opacity: 0.7;
+}
+
+.form-label {
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+.text-muted {
+    color: var(--text-secondary) !important;
+}
+
+/* Стили для карточек */
+.card {
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    border: 1px solid rgba(102, 126, 234, 0.2);
+    transition: all 0.3s;
+}
+
+[data-bs-theme="light"] .card {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.card-header {
+    border-bottom: 2px solid rgba(102, 126, 234, 0.2);
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+.card-body {
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+}
+
+.card-footer {
+    background-color: var(--bg-secondary);
+    border-top: 1px solid rgba(102, 126, 234, 0.2);
+}
+
+/* Стили для навбара */
+.navbar-dark {
+    background-color: var(--bg-primary) !important;
+    border-bottom: 2px solid var(--border-color);
+}
+
+[data-bs-theme="light"] .navbar-dark {
+    background-color: var(--bg-secondary) !important;
+}
+
+/* Стили для модальных окон */
+.modal-content {
+    background-color: var(--bg-primary);
+    border: 2px solid var(--border-color);
+    color: var(--text-primary);
+}
+
+.modal-header {
+    border-bottom: 2px solid rgba(102, 126, 234, 0.2);
+    background-color: var(--bg-secondary);
+}
+
+.modal-body {
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+}
+
+.modal-footer {
+    border-top: 2px solid rgba(102, 126, 234, 0.2);
+    background-color: var(--bg-secondary);
+}
+
+/* Стили для алертов */
+.alert {
+    background-color: var(--bg-secondary);
+    border: 2px solid var(--border-color);
+    color: var(--text-primary);
+}
+
+.alert-info {
+    background-color: rgba(102, 126, 234, 0.1);
+    border-color: var(--accent-primary);
+    color: var(--text-primary);
+}
+
+.alert-success {
+    background-color: rgba(72, 187, 120, 0.1);
+    border-color: #48bb78;
+    color: var(--text-primary);
+}
+
+.alert-danger {
+    background-color: rgba(229, 62, 62, 0.1);
+    border-color: #e53e3e;
+    color: var(--text-primary);
+}
+
+/* Стили для карточек генераций */
+.generation-card {
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.generation-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
+}
+
+.prompt-text {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(102, 126, 234, 0.5) transparent;
+}
+
+.prompt-text::-webkit-scrollbar {
+    height: 6px;
+}
+
+.prompt-text::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.prompt-text::-webkit-scrollbar-thumb {
+    background: rgba(102, 126, 234, 0.5);
+    border-radius: 3px;
+}
+
+.prompt-text::-webkit-scrollbar-thumb:hover {
+    background: rgba(102, 126, 234, 0.7);
+}
+
+.prompt-text {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+.generation-status-badge {
+    background: linear-gradient(135deg, rgba(72, 187, 120, 0.7) 0%, rgba(74, 85, 104, 0.6) 100%) !important;
+    color: rgba(72, 187, 120, 1) !important;
+    border: 1px solid rgba(72, 187, 120, 0.8);
+    font-size: 0.7rem;
+    padding: 0.25rem 0.5rem;
+    opacity: 1 !important;
+    font-weight: 600;
+}
+
+/* Стили для кнопок в карточках */
+.btn-xs {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.7rem;
+    border-radius: 4px;
+    border: none;
+    transition: all 0.2s;
+    flex: 1 1 auto;
+    min-width: 70px;
+}
+
+/* Стили для кнопок-иконок */
+.btn-icon-only {
+    transition: all 0.2s;
+    cursor: pointer;
+}
+
+.btn-icon-only:hover {
+    transform: translateY(-2px) scale(1.1);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+.btn-icon-only:active {
+    transform: translateY(0) scale(1);
+}
+
+.btn-download {
+    background: linear-gradient(135deg, #00d4ff 0%, rgba(72, 187, 120, 0.3) 100%) !important;
+    color: #fff !important;
+    font-weight: 500;
+}
+
+.btn-download:hover {
+    background: linear-gradient(135deg, #00b8e6 0%, rgba(72, 187, 120, 0.5) 100%) !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0, 212, 255, 0.3);
+}
+
+.btn-icon-only.btn-download {
+    background: linear-gradient(135deg, #00d4ff 0%, rgba(72, 187, 120, 0.3) 100%) !important;
+    color: #fff !important;
+}
+
+.btn-icon-only.btn-download:hover {
+    background: linear-gradient(135deg, #00b8e6 0%, rgba(72, 187, 120, 0.5) 100%) !important;
+}
+
+.btn-edit {
+    background: linear-gradient(135deg, var(--metal-gray) 0%, var(--metal-gray-dark) 100%);
+    color: var(--text-primary) !important;
+    border: 1px solid var(--border-color);
+}
+
+.btn-edit:hover {
+    background: linear-gradient(135deg, var(--metal-gray-light) 0%, var(--metal-gray) 100%);
+    border-color: var(--border-hover);
+    transform: translateY(-1px);
+}
+
+.btn-icon-only.btn-edit {
+    background: linear-gradient(135deg, var(--metal-gray) 0%, var(--metal-gray-dark) 100%);
+    color: var(--text-primary) !important;
+    border: 1px solid var(--border-color);
+}
+
+.btn-icon-only.btn-edit:hover {
+    background: linear-gradient(135deg, var(--metal-gray-light) 0%, var(--metal-gray) 100%);
+    border-color: var(--border-hover);
+}
+
+.btn-delete {
+    background: linear-gradient(135deg, rgba(229, 62, 62, 0.2) 0%, rgba(74, 85, 104, 0.3) 100%) !important;
+    color: rgba(229, 62, 62, 0.9) !important;
+    border: 1px solid rgba(229, 62, 62, 0.3);
+}
+
+.btn-delete:hover {
+    background: linear-gradient(135deg, rgba(229, 62, 62, 0.3) 0%, rgba(74, 85, 104, 0.4) 100%) !important;
+    border-color: rgba(229, 62, 62, 0.5);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(229, 62, 62, 0.2);
+}
+
+.btn-icon-only.btn-delete {
+    background: linear-gradient(135deg, rgba(229, 62, 62, 0.2) 0%, rgba(74, 85, 104, 0.3) 100%) !important;
+    color: rgba(229, 62, 62, 0.9) !important;
+    border: 1px solid rgba(229, 62, 62, 0.3);
+}
+
+.btn-icon-only.btn-delete:hover {
+    background: linear-gradient(135deg, rgba(229, 62, 62, 0.3) 0%, rgba(74, 85, 104, 0.4) 100%) !important;
+    border-color: rgba(229, 62, 62, 0.5);
+}
+
+/* Стили для фуллскрин модалки */
+.fullscreen-image-modal {
+    animation: fadeIn 0.2s ease-in;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+/* Исправление drag and drop для референсов */
+.reference-item {
+    user-select: none;
+    -webkit-user-drag: element;
+}
+
+.reference-item img {
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-drag: none;
+}
+
+.reference-item .btn-danger {
+    pointer-events: auto;
+}
+
+/* Адаптивность */
+@media (max-width: 768px) {
+    .col-lg-4, .col-lg-8 {
+        margin-bottom: 1rem;
+    }
+}

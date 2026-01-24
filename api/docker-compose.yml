@@ -1,0 +1,111 @@
+# ВАЖНО ДЛЯ ПРОДАКШЕНА:
+# 1. Измените все пароли (POSTGRES_PASSWORD, MINIO_ROOT_PASSWORD, MINIO_ROOT_USER, SECRET_KEY)
+# 2. Используйте переменные окружения из .env файла вместо хардкода
+# 3. Настройте CORS_ORIGINS в .env для вашего домена
+# 4. Используйте сильный SECRET_KEY (минимум 32 символа)
+
+services:
+  # PostgreSQL
+  postgres:
+    image: postgres:15-alpine
+    container_name: nano_banana_postgres
+    environment:
+      POSTGRES_DB: nano_banana
+      POSTGRES_USER: nano_banana_user
+      # ВАЖНО: Измените пароль для продакшена!
+      POSTGRES_PASSWORD: nano_banana_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nano_banana_user -d nano_banana"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - nano_banana_network
+
+  # MinIO
+  minio:
+    image: minio/minio:latest
+    container_name: nano_banana_minio
+    command: server /data --console-address ":9001" --address ":9000"
+    environment:
+      # ВАЖНО: Измените эти значения для продакшена!
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+      MINIO_BROWSER_REDIRECT_URL: http://localhost:9001
+    ports:
+      - "9000:9000"  # API
+      - "9001:9001"  # Console
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - nano_banana_network
+
+  # MinIO Setup
+  minio-setup:
+    image: minio/mc:latest
+    container_name: nano_banana_minio_setup
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      sleep 5;
+      mc alias set myminio http://minio:9000 minioadmin minioadmin123;
+      mc mb myminio/nano-banana-images --ignore-existing;
+      mc anonymous set download myminio/nano-banana-images;
+      exit 0;
+      "
+    networks:
+      - nano_banana_network
+
+  # FastAPI приложение
+  api:
+    build: .
+    container_name: nano_banana_api
+    ports:
+      - "8000:8000"
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=nano_banana
+      - POSTGRES_USER=nano_banana_user
+      - POSTGRES_PASSWORD=nano_banana_pass
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin123
+      - MINIO_BUCKET=nano-banana-images
+      - MINIO_USE_SSL=false
+      - MINIO_PUBLIC_URL=http://localhost:9000
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
+      - ALGORITHM=HS256
+      - REPLICATE_API_TOKEN=${REPLICATE_API_TOKEN:-}
+      - MAX_WORKERS=3
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    volumes:
+      - ./app:/app/app
+      - ./frontend:/app/frontend
+      - ./logs:/app/logs
+    networks:
+      - nano_banana_network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  minio_data:
+
+networks:
+  nano_banana_network:
+    driver: bridge
+

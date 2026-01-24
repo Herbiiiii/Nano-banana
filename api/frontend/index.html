@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🍌 Nano Banana Pro - Генератор изображений</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Навигационная панель -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="#">
+                <i class="fas fa-banana me-2"></i>
+                Nano Banana Pro
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="#"><i class="fas fa-home me-1"></i>Главная</a>
+                    </li>
+                </ul>
+                <div class="d-flex align-items-center">
+                    <div class="form-check form-switch me-3">
+                        <input class="form-check-input" type="checkbox" id="themeSwitch">
+                        <label class="form-check-label text-light" for="themeSwitch">
+                            <i class="fas fa-moon"></i>
+                        </label>
+                    </div>
+                    <button class="btn btn-outline-light" id="loginBtn" data-bs-toggle="modal" data-bs-target="#loginModal">
+                        <i class="fas fa-sign-in-alt me-1"></i>Войти
+                    </button>
+                    <div id="userMenu" class="dropdown ms-2" style="display: none;">
+                        <button class="btn btn-outline-light dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                            <i class="fas fa-user me-1"></i><span id="usernameDisplay"></span>
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#apiKeyModal">
+                                <i class="fas fa-key me-2"></i>API Ключ
+                            </a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="#" id="logoutBtn">
+                                <i class="fas fa-sign-out-alt me-2"></i>Выйти
+                            </a></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container-fluid my-4">
+        <div class="row g-4 justify-content-center mt-5">
+            <!-- Генератор -->
+            <div class="col-lg-4">
+                <div class="card shadow h-100">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-magic me-2"></i>Генерация изображения</h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="generateForm">
+                            <!-- Режим генерации -->
+                            <div class="mb-3">
+                                <label class="form-label">Режим генерации</label>
+                                <div class="btn-group w-100" role="group">
+                                    <input type="radio" class="btn-check" name="generationMode" id="modeText" value="text-to-image" checked>
+                                    <label class="btn btn-outline-primary" for="modeText">
+                                        <i class="fas fa-font me-1"></i>Text-to-Image
+                                    </label>
+                                    <input type="radio" class="btn-check" name="generationMode" id="modeImage" value="image-to-image">
+                                    <label class="btn btn-outline-primary" for="modeImage">
+                                        <i class="fas fa-image me-1"></i>Image-to-Image
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- Референсные изображения -->
+                            <div class="mb-3" id="referenceImagesSection" style="display: none;">
+                                <label for="referenceImages" class="form-label">Референсные изображения (до 4)</label>
+                                <input type="file" class="form-control" id="referenceImages" accept="image/*" multiple>
+                                <small class="text-muted">Вы можете выбрать несколько файлов или добавлять по одному</small>
+                                <div id="referencePreview" class="mt-2 d-flex flex-wrap"></div>
+                            </div>
+
+                            <!-- Промпт -->
+                            <div class="mb-3">
+                                <label for="prompt" class="form-label">Описание изображения</label>
+                                <textarea class="form-control" id="prompt" rows="3" placeholder="Введите описание изображения..." required></textarea>
+                            </div>
+
+                            <!-- Негативный промпт -->
+                            <div class="mb-3">
+                                <label for="negativePrompt" class="form-label">Негативный промпт (опционально)</label>
+                                <textarea class="form-control" id="negativePrompt" rows="2" placeholder="Что не должно быть на изображении..."></textarea>
+                            </div>
+
+                            <!-- Разрешение и соотношение -->
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <label for="resolution" class="form-label">Разрешение</label>
+                                    <select class="form-select" id="resolution">
+                                        <option value="1K">1K</option>
+                                        <option value="2K">2K</option>
+                                        <option value="4K">4K</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="aspectRatio" class="form-label">Соотношение сторон</label>
+                                    <!-- Скрытый select для совместимости -->
+                                    <select class="form-select d-none" id="aspectRatio" name="aspectRatio">
+                                        <option value="1:1">1:1</option>
+                                        <option value="16:9">16:9</option>
+                                        <option value="9:16">9:16</option>
+                                        <option value="4:3">4:3</option>
+                                        <option value="3:4">3:4</option>
+                                        <option value="21:9">21:9</option>
+                                        <option value="5:4">5:4</option>
+                                        <option value="2:3">2:3</option>
+                                        <option value="user1" id="user1Option">user1</option>
+                                        <option value="user2" id="user2Option">user2</option>
+                                        <option value="user3" id="user3Option">user3</option>
+                                        <option value="user4" id="user4Option">user4</option>
+                                    </select>
+                                    <!-- Кастомный dropdown -->
+                                    <div class="custom-dropdown" id="aspectRatioDropdown">
+                                        <div class="custom-dropdown-selected" id="aspectRatioSelected">
+                                            <span class="custom-dropdown-icon" id="aspectRatioIcon"></span>
+                                            <span class="custom-dropdown-text" id="aspectRatioText">1:1</span>
+                                            <i class="fas fa-chevron-down custom-dropdown-arrow"></i>
+                                        </div>
+                                        <div class="custom-dropdown-menu" id="aspectRatioMenu">
+                                            <div class="custom-dropdown-group">
+                                                <div class="custom-dropdown-group-label">Стандартные</div>
+                                                <div class="custom-dropdown-item" data-value="1:1" data-icon="icons/aspect-1-1.svg">
+                                                    <img src="icons/aspect-1-1.svg" class="custom-dropdown-item-icon" alt="1:1" onerror="this.style.display='none'">
+                                                    <span>1:1</span>
+                                                </div>
+                                                <div class="custom-dropdown-item" data-value="16:9" data-icon="icons/aspect-16-9.svg">
+                                                    <img src="icons/aspect-16-9.svg" class="custom-dropdown-item-icon" alt="16:9" onerror="this.style.display='none'">
+                                                    <span>16:9</span>
+                                                </div>
+                                                <div class="custom-dropdown-item" data-value="9:16" data-icon="icons/aspect-9-16.svg">
+                                                    <img src="icons/aspect-9-16.svg" class="custom-dropdown-item-icon" alt="9:16" onerror="this.style.display='none'">
+                                                    <span>9:16</span>
+                                                </div>
+                                                <div class="custom-dropdown-item" data-value="4:3" data-icon="icons/aspect-4-3.svg">
+                                                    <img src="icons/aspect-4-3.svg" class="custom-dropdown-item-icon" alt="4:3" onerror="this.style.display='none'">
+                                                    <span>4:3</span>
+                                                </div>
+                                                <div class="custom-dropdown-item" data-value="3:4" data-icon="icons/aspect-3-4.svg">
+                                                    <img src="icons/aspect-3-4.svg" class="custom-dropdown-item-icon" alt="3:4" onerror="this.style.display='none'">
+                                                    <span>3:4</span>
+                                                </div>
+                                            </div>
+                                            <div class="custom-dropdown-group" id="referenceAspectGroup" style="display: none;">
+                                                <div class="custom-dropdown-group-label">Из референса</div>
+                                                <div class="custom-dropdown-item" data-value="user1" data-icon="icons/aspect-user-1.svg" id="user1Option">
+                                                    <img src="icons/aspect-user-1.svg" class="custom-dropdown-item-icon" alt="Юзер1" onerror="this.style.display='none'">
+                                                    <span id="user1Text">Юзер1 (из реф1)</span>
+                                                </div>
+                                                <div class="custom-dropdown-item user-child" data-value="user2" data-icon="icons/aspect-user-2.svg" id="user2Option" style="display: none;">
+                                                    <img src="icons/aspect-user-2.svg" class="custom-dropdown-item-icon" alt="Юзер2" onerror="this.style.display='none'">
+                                                    <span id="user2Text">└─ Юзер2 (из реф2)</span>
+                                                </div>
+                                                <div class="custom-dropdown-item user-child" data-value="user3" data-icon="icons/aspect-user-3.svg" id="user3Option" style="display: none;">
+                                                    <img src="icons/aspect-user-3.svg" class="custom-dropdown-item-icon" alt="Юзер3" onerror="this.style.display='none'">
+                                                    <span id="user3Text">└─ Юзер3 (из реф3)</span>
+                                                </div>
+                                                <div class="custom-dropdown-item user-child" data-value="user4" data-icon="icons/aspect-user-4.svg" id="user4Option" style="display: none;">
+                                                    <img src="icons/aspect-user-4.svg" class="custom-dropdown-item-icon" alt="Юзер4" onerror="this.style.display='none'">
+                                                    <span id="user4Text">└─ Юзер4 (из реф4)</span>
+                                                </div>
+                                            </div>
+                                            <div class="custom-dropdown-group">
+                                                <div class="custom-dropdown-group-label">Дополнительные</div>
+                                                <div class="custom-dropdown-item" data-value="21:9" data-icon="icons/aspect-21-9.svg">
+                                                    <img src="icons/aspect-21-9.svg" class="custom-dropdown-item-icon" alt="21:9" onerror="this.style.display='none'">
+                                                    <span>21:9 Ультраширокий</span>
+                                                </div>
+                                                <div class="custom-dropdown-item" data-value="5:4" data-icon="icons/aspect-5-4.svg">
+                                                    <img src="icons/aspect-5-4.svg" class="custom-dropdown-item-icon" alt="5:4" onerror="this.style.display='none'">
+                                                    <span>5:4</span>
+                                                </div>
+                                                <div class="custom-dropdown-item" data-value="2:3" data-icon="icons/aspect-2-3.svg">
+                                                    <img src="icons/aspect-2-3.svg" class="custom-dropdown-item-icon" alt="2:3" onerror="this.style.display='none'">
+                                                    <span>2:3</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <small class="form-text text-muted">Соотношение сторон выходного изображения</small>
+                                </div>
+                            </div>
+
+                            <!-- Параметры -->
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <label for="numSteps" class="form-label">Шаги</label>
+                                    <input type="number" class="form-control" id="numSteps" min="10" max="100" value="50">
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="guidance" class="form-label">Guidance Scale</label>
+                                    <input type="number" step="0.5" class="form-control" id="guidance" min="1" max="20" value="7.5">
+                                </div>
+                            </div>
+
+                            <!-- Seed -->
+                            <div class="mb-3">
+                                <label for="seed" class="form-label">Seed (опционально)</label>
+                                <input type="number" class="form-control" id="seed" placeholder="Оставьте пустым для случайного">
+                            </div>
+
+                            <button type="submit" class="btn btn-primary w-100 py-2" id="sendToGenerate">
+                                <span id="submitText">🎨 Сгенерировать изображение</span>
+                                <span class="spinner-border spinner-border-sm d-none ms-2" id="spinner" role="status"></span>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Галерея -->
+            <div class="col-lg-8">
+                <div class="card shadow h-100">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <div>
+                            <h5 class="mb-0"><i class="fas fa-images me-2"></i>Мои работы</h5>
+                            <small class="text-muted" id="galleryStats" style="display: none;">
+                                <span id="galleryCount">0</span> из <span id="galleryTotal">0</span> генераций
+                            </small>
+                        </div>
+                        <button class="btn btn-sm btn-light" id="refreshGallery">
+                            <i class="fas fa-sync-alt"></i>
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div id="queueStatus" class="alert alert-info" style="display: none;">
+                            <i class="fas fa-info-circle me-2"></i>
+                            <span id="queueStatusText"></span>
+                        </div>
+                        <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4" id="imageGrid">
+                            <!-- Карточки будут добавлены через JS -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Модальное окно входа -->
+    <div class="modal fade" id="loginModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title">Вход в систему</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="loginForm">
+                        <div class="mb-3">
+                            <label for="loginUsername" class="form-label">Имя пользователя или Email</label>
+                            <input type="text" class="form-control" id="loginUsername" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="loginPassword" class="form-label">Пароль</label>
+                            <div class="input-group">
+                                <input type="password" class="form-control" id="loginPassword" required>
+                                <button class="btn btn-outline-secondary" type="button" id="toggleLoginPassword">
+                                    <i class="fas fa-eye" id="loginPasswordIcon"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div id="loginError" class="alert alert-danger d-none" role="alert"></div>
+                        <button type="submit" class="btn btn-primary w-100">Войти</button>
+                    </form>
+                    <div class="text-center mt-3">
+                        <small>Нет аккаунта? <a href="#" data-bs-toggle="modal" data-bs-target="#registerModal">Зарегистрируйтесь</a></small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно регистрации -->
+    <div class="modal fade" id="registerModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title">Регистрация</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="registerForm">
+                        <div class="mb-3">
+                            <label for="registerUsername" class="form-label">Имя пользователя</label>
+                            <input type="text" class="form-control" id="registerUsername" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="registerEmail" class="form-label">Email</label>
+                            <input type="email" class="form-control" id="registerEmail" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="registerPassword" class="form-label">Пароль</label>
+                            <div class="input-group">
+                                <input type="password" class="form-control" id="registerPassword" required>
+                                <button class="btn btn-outline-secondary" type="button" id="toggleRegisterPassword">
+                                    <i class="fas fa-eye" id="registerPasswordIcon"></i>
+                                </button>
+                            </div>
+                            <small class="form-text text-muted">Минимум 6 символов, максимум 72 байта</small>
+                        </div>
+                        <div id="registerError" class="alert alert-danger d-none" role="alert"></div>
+                        <button type="submit" class="btn btn-primary w-100">Зарегистрироваться</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно API ключа -->
+    <div class="modal fade" id="apiKeyModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-warning text-dark">
+                    <h5 class="modal-title"><i class="fas fa-key me-2"></i>API Ключ Replicate</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-warning">
+                        <i class="fas fa-shield-alt me-2"></i>
+                        <strong>Важно:</strong> API ключи <strong>НЕ сохраняются на сервере</strong> для вашей безопасности. 
+                        Ключ хранится только локально в браузере (sessionStorage) и удаляется при закрытии браузера.
+                    </div>
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        Укажите ваш API ключ Replicate. Получить можно на 
+                        <a href="https://replicate.com/account/api-tokens" target="_blank" class="alert-link">replicate.com/account/api-tokens</a>
+                        <br><small>Если не укажете свой ключ, будет использован глобальный ключ из настроек сервера.</small>
+                    </div>
+                    <form id="apiKeyForm">
+                        <div class="mb-3">
+                            <label for="apiKeyInput" class="form-label">API Ключ Replicate</label>
+                            <input type="password" class="form-control" id="apiKeyInput" placeholder="r8_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
+                            <small class="form-text text-muted">Ключ начинается с "r8_"</small>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-warning flex-fill">
+                                <i class="fas fa-save me-2"></i>Сохранить
+                            </button>
+                            <button type="button" class="btn btn-outline-danger" id="deleteApiKeyBtn">
+                                <i class="fas fa-trash me-2"></i>Удалить
+                            </button>
+                        </div>
+                    </form>
+                    <div id="apiKeyStatus" class="mt-3"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Уведомления -->
+    <div class="toast-container position-fixed bottom-0 end-0 p-3">
+        <div id="notificationToast" class="toast" role="alert">
+            <div class="toast-header bg-success text-white">
+                <strong class="me-auto">Уведомление</strong>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
+            </div>
+            <div class="toast-body" id="toastMessage"></div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
+
