@@ -23,7 +23,10 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
             cd ${{ secrets.DEPLOY_PATH }}
-            git pull origin master
+            # Принудительно обновляем код с GitHub, игнорируя локальные изменения
+            git fetch origin master
+            git reset --hard origin/master
+            git clean -fd
             docker-compose down
             docker-compose up -d --build
             docker-compose ps
