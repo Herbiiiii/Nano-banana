@@ -363,7 +363,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 });
                 if (response.ok) {
-                    const generations = await response.json();
+                    const data = await response.json();
+                    // Поддерживаем как старый формат (массив), так и новый (объект с метаданными)
+                    const generations = Array.isArray(data) ? data : (data.generations || []);
                     const activeCount = generations.filter(g => g.status === 'pending' || g.status === 'running').length;
                     // Обновляем только если есть активные генерации
                     if (activeCount > 0) {
@@ -825,7 +827,9 @@ async function handleGenerate(e) {
                         }
                     });
                     if (response.ok) {
-                        const generations = await response.json();
+                        const data = await response.json();
+                        // Поддерживаем как старый формат (массив), так и новый (объект с метаданными)
+                        const generations = Array.isArray(data) ? data : (data.generations || []);
                         const activeCount = generations.filter(g => g.status === 'pending' || g.status === 'running').length;
                         if (activeCount === 0) {
                             console.log('[GENERATE] Все генерации завершены, останавливаем проверку');
@@ -841,7 +845,9 @@ async function handleGenerate(e) {
                             }
                         });
                         if (retryResponse.ok) {
-                            const generations = await retryResponse.json();
+                            const data = await retryResponse.json();
+                            // Поддерживаем как старый формат (массив), так и новый (объект с метаданными)
+                            const generations = Array.isArray(data) ? data : (data.generations || []);
                             const activeCount = generations.filter(g => g.status === 'pending' || g.status === 'running').length;
                             if (activeCount === 0) {
                                 console.log('[GENERATE] Все генерации завершены, останавливаем проверку');
