@@ -3,20 +3,20 @@ POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
 POSTGRES_DB=nano_banana
 POSTGRES_USER=nano_banana_user
-POSTGRES_PASSWORD=HWRYrAz20QFL9df
+POSTGRES_PASSWORD=ВАШ_СИЛЬНЫЙ_ПАРОЛЬ  # ⚠️ ИЗМЕНИТЬ!
 
 # MinIO
-MINIO_ENDPOINT=MINIO_ENDPOINT=minio:9000
-MINIO_ROOT_USER=NanoBananoCorps
-MINIO_ROOT_PASSWORD=HWRYrAz20QFL9df
-MINIO_ACCESS_KEY=1nphz5QBFMf8VOV
-MINIO_SECRET_KEY=1nphz5QBFMf8VOV
+MINIO_ENDPOINT=localhost:9000
+MINIO_ROOT_USER=minioadmin  # ⚠️ ИЗМЕНИТЬ!
+MINIO_ROOT_PASSWORD=minioadmin123  # ⚠️ ИЗМЕНИТЬ!
+MINIO_ACCESS_KEY=minioadmin  # ⚠️ ИЗМЕНИТЬ!
+MINIO_SECRET_KEY=minioadmin123  # ⚠️ ИЗМЕНИТЬ!
 MINIO_BUCKET=nano-banana-images
 MINIO_USE_SSL=false
-MINIO_PUBLIC_URL=https://storage.ooneclickk.ru
+MINIO_PUBLIC_URL=http://localhost:9000
 
 # Security
-SECRET_KEY=gdcTJlI3d4Q9PNkjJDv3tef7ySc7IKS3ObQa0A3yvWxzBMgTlr7z60VWHsExPdbu
+SECRET_KEY=ВАШ_СГЕНЕРИРОВАННЫЙ_КЛЮЧ_64_СИМВОЛА  # ⚠️ ИЗМЕНИТЬ!
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=180
 REFRESH_TOKEN_EXPIRE_DAYS=7
@@ -30,8 +30,8 @@ MAX_WORKERS=3
 MAX_CONCURRENT_GENERATIONS=3
 
 # CORS (добавьте!)
-CORS_ORIGINS=https://ooneclickk.ru,https://www.ooneclickk.ru
+CORS_ORIGINS=*  # ⚠️ Для продакшена: https://yourdomain.com
 
 # API URLs (добавьте!)
-API_URL=https://ooneclickk.ru
-MINIO_CONSOLE_URL=https://ooneclickk.ru:9001
+API_URL=http://localhost:8000
+MINIO_CONSOLE_URL=http://localhost:9001
