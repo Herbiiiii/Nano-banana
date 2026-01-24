@@ -237,6 +237,7 @@ async def generate_image(
     try:
         # Получаем API ключ из запроса или используем глобальный
         # ВАЖНО: Ключи пользователей НЕ сохраняются в БД для безопасности
+        logger.info(f"[GENERATION] API ключ из запроса: {'передан' if request.api_key else 'не передан'}, глобальный ключ: {'настроен' if settings.REPLICATE_API_TOKEN else 'не настроен'}")
         api_key = get_user_replicate_key(user.user_id, request.api_key)
         if not api_key:
             raise HTTPException(
