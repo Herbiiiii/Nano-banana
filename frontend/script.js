@@ -76,6 +76,47 @@ function removeApiKey() {
     return setApiKey(null);
 }
 
+// Обработка файла референса (используется и для загрузки, и для paste)
+function processReferenceFile(file) {
+    if (!file.type.startsWith('image/')) {
+        console.error(`[REFERENCE] Файл не является изображением: ${file.name}`);
+        return;
+    }
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        // Определяем соотношение сторон изображения
+        const img = new Image();
+        img.onload = () => {
+            const aspectRatio = calculateAspectRatio(img.width, img.height);
+            const refObj = {
+                file: file,
+                dataUrl: event.target.result,
+                id: Date.now() + Math.random(),
+                aspectRatio: aspectRatio,
+                width: img.width,
+                height: img.height,
+                originalRatio: `${img.width}:${img.height}` // Сохраняем оригинальное соотношение
+            };
+            referenceImages.push(refObj);
+            console.log(`[REFERENCE] Загружен референс ${referenceImages.length}: ${img.width}x${img.height} → ${aspectRatio}`);
+            updateReferencePreview();
+            updateAspectRatioOptions();
+            showToast(`Референс ${referenceImages.length} добавлен`, 'success');
+        };
+        img.onerror = () => {
+            console.error(`[REFERENCE] Ошибка загрузки изображения: ${file.name}`);
+            showToast(`Ошибка загрузки изображения: ${file.name}`, 'error');
+        };
+        img.src = event.target.result;
+    };
+    reader.onerror = () => {
+        console.error(`[REFERENCE] Ошибка чтения файла: ${file.name}`);
+        showToast(`Ошибка чтения файла: ${file.name}`, 'error');
+    };
+    reader.readAsDataURL(file);
+}
+
 // Обновление превью референсных изображений
 function updateReferencePreview() {
     const preview = document.getElementById('referencePreview');
@@ -658,38 +699,75 @@ function setupEventListeners() {
         if (remainingSlots > 0) {
             const filesToAdd = newFiles.slice(0, remainingSlots);
             filesToAdd.forEach(file => {
-                const reader = new FileReader();
-                reader.onload = (event) => {
-                    // Определяем соотношение сторон изображения
-                    const img = new Image();
-                    img.onload = () => {
-                        const aspectRatio = calculateAspectRatio(img.width, img.height);
-                        const refObj = {
-                            file: file,
-                            dataUrl: event.target.result,
-                            id: Date.now() + Math.random(),
-                            aspectRatio: aspectRatio,
-                            width: img.width,
-                            height: img.height,
-                            originalRatio: `${img.width}:${img.height}` // Сохраняем оригинальное соотношение
-                        };
-                        referenceImages.push(refObj);
-                        console.log(`[REFERENCE] Загружен референс ${referenceImages.length}: ${img.width}x${img.height} → ${aspectRatio}`);
-                        updateReferencePreview();
-                        updateAspectRatioOptions();
-                    };
-                    img.onerror = () => {
-                        console.error(`[REFERENCE] Ошибка загрузки изображения: ${file.name}`);
-                    };
-                    img.src = event.target.result;
-                };
-                reader.readAsDataURL(file);
+                processReferenceFile(file);
             });
         }
         
         // Очищаем input чтобы можно было выбрать тот же файл снова
         e.target.value = '';
     });
+    
+    // Обработка вставки из буфера обмена
+    const referenceSection = document.getElementById('referenceImagesSection');
+    const referencePreview = document.getElementById('referencePreview');
+    
+    // Обработчик paste на секции референсов
+    if (referenceSection) {
+        referenceSection.addEventListener('paste', async (e) => {
+            // Проверяем что секция видима
+            if (referenceSection.style.display === 'none') return;
+            
+            const remainingSlots = 4 - referenceImages.length;
+            if (remainingSlots <= 0) {
+                showToast('Достигнут лимит референсов (4)', 'warning');
+                return;
+            }
+            
+            const items = e.clipboardData.items;
+            const imageItems = Array.from(items).filter(item => item.type.indexOf('image') !== -1);
+            
+            if (imageItems.length === 0) {
+                showToast('В буфере обмена нет изображений', 'info');
+                return;
+            }
+            
+            for (let i = 0; i < Math.min(imageItems.length, remainingSlots); i++) {
+                const item = imageItems[i];
+                const file = item.getAsFile();
+                if (file) {
+                    processReferenceFile(file);
+                }
+            }
+            
+            e.preventDefault();
+        });
+    }
+    
+    // Обработчик paste на preview (на случай если фокус там)
+    if (referencePreview) {
+        referencePreview.addEventListener('paste', async (e) => {
+            const remainingSlots = 4 - referenceImages.length;
+            if (remainingSlots <= 0) {
+                showToast('Достигнут лимит референсов (4)', 'warning');
+                return;
+            }
+            
+            const items = e.clipboardData.items;
+            const imageItems = Array.from(items).filter(item => item.type.indexOf('image') !== -1);
+            
+            if (imageItems.length === 0) return;
+            
+            for (let i = 0; i < Math.min(imageItems.length, remainingSlots); i++) {
+                const item = imageItems[i];
+                const file = item.getAsFile();
+                if (file) {
+                    processReferenceFile(file);
+                }
+            }
+            
+            e.preventDefault();
+        });
+    }
     
 
     // Форма генерации
@@ -806,17 +884,21 @@ async function handleGenerate(e) {
             formData.reference_images = referenceImages.map(ref => ref.dataUrl);
         }
         
-        // Добавляем API ключ из хранилища (если есть)
+        // Добавляем API ключ из хранилища (обязательно)
         // ВАЖНО: Ключи НЕ сохраняются на сервере, передаются только в запросе
         const apiKey = getApiKey();
-        if (apiKey) {
-            formData.api_key = apiKey;
-            const storage = getStorage();
-            const storageType = storage === localStorage ? 'localStorage' : 'sessionStorage';
-            console.log(`[GENERATE] API ключ найден в ${storageType}, добавляем в запрос`);
-        } else {
-            console.warn('[GENERATE] API ключ НЕ найден в хранилище! Генерация может не работать.');
+        if (!apiKey || apiKey.trim() === '') {
+            showToast('Ошибка: API ключ не введен. Пожалуйста, введите ключ Replicate API в настройках.', 'error');
+            spinner.classList.add('d-none');
+            submitText.textContent = '🎨 Сгенерировать изображение';
+            sendButton.disabled = false;
+            return;
         }
+        
+        formData.api_key = apiKey;
+        const storage = getStorage();
+        const storageType = storage === localStorage ? 'localStorage' : 'sessionStorage';
+        console.log(`[GENERATE] API ключ найден в ${storageType}, добавляем в запрос`);
 
         // Отправка запроса
         const response = await fetch(`${API_URL}/images/generate`, {
@@ -1300,7 +1382,7 @@ async function loadGallery() {
         grid.innerHTML = sortedGenerations.map(gen => `
             <div class="col" data-generation-id="${gen.id}">
                 <div class="card h-100 generation-card" style="border-radius: 12px; overflow: hidden;">
-                    <div class="position-relative image-container" data-gen-id="${gen.id}" style="height: 350px; overflow: hidden !important; background: #1a1a2e; cursor: ${gen.status === 'completed' && gen.result_url ? 'pointer' : 'default'}; border-radius: 0 0 12px 12px !important; position: relative;" ${gen.status === 'completed' && gen.result_url ? `onclick="openFullscreenImage('${gen.result_url.replace(/'/g, "\\'")}', '${(gen.prompt || '').replace(/'/g, "\\'").replace(/"/g, '&quot;')}')"` : ''}>
+                    <div class="position-relative image-container" data-gen-id="${gen.id}" style="height: 350px; overflow: hidden !important; background: #1a1a2e; cursor: ${gen.status === 'completed' && gen.result_url ? 'pointer' : 'default'}; border-radius: 0 0 12px 12px !important; position: relative;" ${gen.status === 'completed' && gen.result_url ? `onclick="(function(e) { if (!e.target.closest('.info-btn') && !e.target.closest('.btn-edit') && !e.target.closest('.btn-delete') && !e.target.closest('.btn-download') && !e.target.closest('.prompt-and-buttons-overlay')) { openFullscreenImage('${gen.result_url.replace(/'/g, "\\'")}', '${(gen.prompt || '').replace(/'/g, "\\'").replace(/"/g, '&quot;')}'); } })(event)"` : ''}>
                         ${gen.status === 'completed' && gen.result_url ? 
                             `<img src="${gen.result_url}" class="card-img-top generation-image" data-gen-id="${gen.id}" style="height: 350px; width: 100%; object-fit: cover; position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: 1; display: block; border-radius: 0 0 12px 12px;" alt="Generated image" 
                                 onerror="(function(img, genId) { console.error('[IMAGE] Ошибка загрузки изображения для генерации', genId); console.error('[IMAGE] URL:', img.src); img.style.display='none'; const container = img.closest('.image-container'); const errorDiv = container ? container.querySelector('.image-error') : null; if (errorDiv) { errorDiv.style.setProperty('display', 'flex', 'important'); errorDiv.style.zIndex='2'; } })(this, ${gen.id});" 
@@ -1329,10 +1411,10 @@ async function loadGallery() {
                             </div>
                         </div>
                         <div class="position-absolute top-0 end-0 m-2" style="z-index: 5; pointer-events: none; display: flex; flex-direction: column; align-items: flex-end; gap: 0.25rem;">
-                            <div style="display: flex; align-items: center; gap: 0.25rem;">
+                            <div style="display: flex; align-items: center; gap: 0.25rem; pointer-events: none;">
                                 <button class="btn btn-sm generation-status-badge" disabled style="opacity: 1 !important; background: ${gen.status === 'completed' ? 'linear-gradient(135deg, rgba(74, 85, 104, 0.7) 0%, rgba(72, 187, 120, 0.5) 100%)' : gen.status === 'failed' ? 'linear-gradient(135deg, rgba(74, 85, 104, 0.7) 0%, rgba(229, 62, 62, 0.5) 100%)' : 'linear-gradient(135deg, rgba(74, 85, 104, 0.7) 0%, rgba(102, 126, 234, 0.5) 100%)'} !important; border: 1px solid ${gen.status === 'completed' ? 'rgba(72, 187, 120, 0.6)' : gen.status === 'failed' ? 'rgba(229, 62, 62, 0.6)' : 'rgba(102, 126, 234, 0.6)'} !important; padding: 0.25rem 0.5rem; color: #ffffff !important; font-weight: 700; cursor: default; pointer-events: none; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);">${gen.status === 'completed' ? 'Завершено' : gen.status === 'running' ? 'Генерируется' : gen.status === 'pending' ? 'В очереди' : 'Ошибка'}</button>
                                 ${(gen.status === 'completed' || gen.status === 'failed') ? 
-                                    `<button class="btn btn-sm btn-link text-white p-1" onclick="event.stopPropagation(); showGenerationParams(${gen.id}, '${(gen.prompt || '').replace(/'/g, "\\'").replace(/"/g, '&quot;')}', '${gen.resolution || ''}', '${gen.aspect_ratio || ''}', '${(gen.error_message || '').replace(/'/g, "\\'").replace(/"/g, '&quot;')}')" title="Параметры генерации" style="opacity: 0.9; pointer-events: auto;">
+                                    `<button class="btn btn-sm btn-link text-white p-1 info-btn" onclick="event.stopPropagation(); event.preventDefault(); showGenerationParams(${gen.id}, '${(gen.prompt || '').replace(/'/g, "\\'").replace(/"/g, '&quot;')}', '${gen.resolution || ''}', '${gen.aspect_ratio || ''}', '${(gen.error_message || '').replace(/'/g, "\\'").replace(/"/g, '&quot;').replace(/\n/g, ' ')}')" title="Параметры генерации" style="opacity: 0.9; pointer-events: auto !important; cursor: pointer; z-index: 10; position: relative;">
                                         <i class="fas fa-info-circle" style="font-size: 0.75rem;"></i>
                                     </button>` : ''
                                 }
@@ -1345,14 +1427,14 @@ async function loadGallery() {
                             <p class="text-light mb-2 small prompt-text" style="font-size: 0.7225rem; line-height: 1.19; padding: 0.5rem; border-radius: 4px; max-width: 100%; overflow-x: auto; overflow-y: hidden; white-space: nowrap;">${(gen.prompt || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
                                 <div class="d-flex gap-2 justify-content-center align-items-center">
                                     ${gen.status === 'completed' && gen.result_url ? 
-                                        `<button class="btn btn-icon-only btn-download" onclick="event.stopPropagation(); downloadImage('${gen.result_url.replace(/'/g, "\\'")}', '${(gen.prompt || '').substring(0, 30).replace(/'/g, "\\'").replace(/"/g, '&quot;')}')" title="Скачать изображение" style="width: 28px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center; border-radius: 4px; border: none; font-size: 0.7rem;">
+                                        `<button class="btn btn-icon-only btn-download" onclick="event.stopPropagation(); event.preventDefault(); downloadImage('${gen.result_url.replace(/'/g, "\\'")}', '${(gen.prompt || '').substring(0, 30).replace(/'/g, "\\'").replace(/"/g, '&quot;')}')" title="Скачать изображение" style="width: 28px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center; border-radius: 4px; border: none; font-size: 0.7rem; pointer-events: auto; cursor: pointer; z-index: 10; position: relative;">
                                             <i class="fas fa-download"></i>
                                         </button>` : ''
                                     }
-                                    <button class="btn btn-icon-only btn-edit" onclick="event.stopPropagation(); editGeneration(${gen.id})" title="Редактировать" style="width: 28px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center; border-radius: 4px; border: none; font-size: 0.7rem;">
+                                    <button class="btn btn-icon-only btn-edit" onclick="event.stopPropagation(); event.preventDefault(); editGeneration(${gen.id})" title="Редактировать" style="width: 28px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center; border-radius: 4px; border: none; font-size: 0.7rem; pointer-events: auto; cursor: pointer; z-index: 10; position: relative;">
                                         <i class="fas fa-edit"></i>
                                     </button>
-                                    <button class="btn btn-icon-only btn-delete" onclick="event.stopPropagation(); deleteGeneration(${gen.id})" title="Удалить" style="width: 28px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center; border-radius: 4px; border: none; font-size: 0.7rem;">
+                                    <button class="btn btn-icon-only btn-delete" onclick="event.stopPropagation(); event.preventDefault(); deleteGeneration(${gen.id})" title="Удалить" style="width: 28px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center; border-radius: 4px; border: none; font-size: 0.7rem; pointer-events: auto; cursor: pointer; z-index: 10; position: relative;">
                                         <i class="fas fa-trash"></i>
                                     </button>
                                 </div>
@@ -1695,10 +1777,10 @@ async function downloadImage(imageUrl, prompt) {
         window.URL.revokeObjectURL(url);
         
         console.log('[DOWNLOAD] Изображение успешно скачано');
-        showNotification('Изображение успешно скачано', 'success');
+        showToast('Изображение успешно скачано', 'success');
     } catch (error) {
         console.error('[DOWNLOAD] Ошибка скачивания изображения:', error);
-        showNotification('Ошибка скачивания изображения: ' + error.message, 'error');
+        showToast('Ошибка скачивания изображения: ' + error.message, 'error');
     }
 }
 
@@ -1767,30 +1849,52 @@ function closeFullscreenImage() {
 
 // Функция для показа параметров генерации
 function showGenerationParams(id, prompt, resolution, aspectRatio, errorMessage) {
+    // Закрываем предыдущее модальное окно если открыто
+    const existingModal = document.querySelector('.generation-params-modal');
+    if (existingModal) {
+        existingModal.remove();
+    }
+    
     const modal = document.createElement('div');
     modal.className = 'generation-params-modal';
-    modal.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(26, 26, 46, 0.95); border: 2px solid #667eea; border-radius: 12px; padding: 1.5rem; z-index: 10000; max-width: 500px; width: 90%; backdrop-filter: blur(10px);';
+    modal.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(26, 26, 46, 0.98); border: 2px solid #667eea; border-radius: 12px; padding: 1.5rem; z-index: 10000; max-width: 600px; width: 90%; max-height: 90vh; overflow-y: auto; backdrop-filter: blur(10px); box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);';
     modal.onclick = (e) => {
         if (e.target === modal) closeGenerationParams();
     };
     
+    // Экранируем все данные для безопасности
+    const safePrompt = (prompt || '').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    const safeResolution = (resolution || 'Не указано').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const safeAspectRatio = (aspectRatio || 'Не указано').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const safeErrorMessage = errorMessage ? errorMessage.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;') : '';
+    
     const content = document.createElement('div');
     content.innerHTML = `
         <div class="d-flex justify-content-between align-items-center mb-3">
-            <h5 class="text-light mb-0">Параметры генерации</h5>
-            <button class="btn btn-sm btn-link text-light p-0" onclick="closeGenerationParams()" style="font-size: 1.5rem; line-height: 1;">
+            <h5 class="text-light mb-0"><i class="fas fa-info-circle me-2"></i>Параметры генерации</h5>
+            <button class="btn btn-sm btn-link text-light p-0" onclick="closeGenerationParams()" style="font-size: 1.5rem; line-height: 1; cursor: pointer;">
                 <i class="fas fa-times"></i>
             </button>
         </div>
         <div class="text-light">
-            <p class="mb-2"><strong>Промпт:</strong></p>
-            <p class="mb-3 small" style="opacity: 0.9;">${prompt.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
-            <p class="mb-2"><strong>Разрешение:</strong> <span class="text-info">${resolution || 'Не указано'}</span></p>
-            <p class="mb-3"><strong>Соотношение сторон:</strong> <span class="text-info">${aspectRatio || 'Не указано'}</span></p>
-            ${errorMessage ? `
+            <div class="mb-3">
+                <p class="mb-2"><strong><i class="fas fa-comment me-2"></i>Промпт:</strong></p>
+                <p class="mb-0 small" style="opacity: 0.9; background: rgba(102, 126, 234, 0.1); padding: 0.75rem; border-radius: 6px; word-wrap: break-word;">${safePrompt || 'Не указано'}</p>
+            </div>
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <p class="mb-2"><strong><i class="fas fa-expand me-2"></i>Разрешение:</strong></p>
+                    <p class="mb-0"><span class="text-info">${safeResolution}</span></p>
+                </div>
+                <div class="col-md-6">
+                    <p class="mb-2"><strong><i class="fas fa-arrows-alt me-2"></i>Соотношение сторон:</strong></p>
+                    <p class="mb-0"><span class="text-info">${safeAspectRatio}</span></p>
+                </div>
+            </div>
+            ${safeErrorMessage ? `
                 <div class="mt-3 p-3" style="background: rgba(229, 62, 62, 0.2); border: 1px solid rgba(229, 62, 62, 0.5); border-radius: 8px;">
                     <p class="mb-2 text-danger"><strong><i class="fas fa-exclamation-triangle me-2"></i>Ошибка генерации:</strong></p>
-                    <p class="mb-0 small text-light" style="opacity: 0.9;">${errorMessage.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
+                    <p class="mb-0 small text-light" style="opacity: 0.95; word-wrap: break-word; white-space: pre-wrap;">${safeErrorMessage}</p>
                 </div>
             ` : ''}
         </div>
@@ -1808,6 +1912,8 @@ function showGenerationParams(id, prompt, resolution, aspectRatio, errorMessage)
         }
     };
     document.addEventListener('keydown', escapeHandler);
+    
+    console.log('[MODAL] Модальное окно параметров открыто, errorMessage:', errorMessage);
 }
 
 function closeGenerationParams() {

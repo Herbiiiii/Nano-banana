@@ -27,16 +27,14 @@ minio = MinioService()
 
 def get_user_replicate_key(user_id: int, api_key_from_request: Optional[str] = None) -> str:
     """
-    Получает API ключ Replicate из запроса пользователя или использует глобальный.
+    Получает API ключ Replicate из запроса пользователя.
     ВАЖНО: Ключи пользователей НЕ сохраняются в БД для безопасности.
+    Каждый пользователь должен использовать свой ключ.
     """
-    # Используем ключ из запроса если он передан
-    if api_key_from_request:
-        return api_key_from_request
-    # Используем глобальный ключ если у пользователя нет своего
-    if not settings.REPLICATE_API_TOKEN:
-        raise ValueError("API ключ Replicate не настроен. Пожалуйста, укажите свой ключ в запросе или настройте глобальный ключ.")
-    return settings.REPLICATE_API_TOKEN
+    # Используем только ключ из запроса - никаких fallback на глобальный ключ
+    if not api_key_from_request or not api_key_from_request.strip():
+        raise ValueError("API ключ Replicate не указан. Пожалуйста, введите свой ключ Replicate API в настройках.")
+    return api_key_from_request.strip()
 
 def process_generation_async(generation_id: int, user_id: int, request_data: dict):
     """Асинхронная обработка генерации"""
@@ -51,13 +49,13 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
             generation.status = "running"
             session.commit()
             
-            # Получаем API ключ из request_data (передан в запросе) или используем глобальный
+            # Получаем API ключ из request_data (передан в запросе)
             # ВАЖНО: Ключи пользователей НЕ сохраняются в БД для безопасности
             api_key_from_request = request_data.get('api_key')
-            logger.info(f"[GENERATION] В process_generation_async: ключ из запроса: {'передан' if api_key_from_request else 'не передан'}, глобальный: {'настроен' if settings.REPLICATE_API_TOKEN else 'не настроен'}")
+            logger.info(f"[GENERATION] В process_generation_async: ключ из запроса: {'передан' if api_key_from_request else 'не передан'}")
+            if not api_key_from_request or not api_key_from_request.strip():
+                raise ValueError("API ключ Replicate не указан. Пожалуйста, введите свой ключ Replicate API в настройках.")
             api_key = get_user_replicate_key(user_id, api_key_from_request)
-            if not api_key:
-                raise ValueError("API ключ Replicate не найден. Укажите ключ в запросе или используйте глобальный ключ.")
             
             # Создаем сервис Replicate
             replicate_service = ReplicateService(api_token=api_key)
@@ -236,15 +234,16 @@ async def generate_image(
     Требует API ключ Replicate (либо глобальный, либо пользовательский)
     """
     try:
-        # Получаем API ключ из запроса или используем глобальный
+        # Получаем API ключ из запроса (обязательно)
         # ВАЖНО: Ключи пользователей НЕ сохраняются в БД для безопасности
-        logger.info(f"[GENERATION] API ключ из запроса: {'передан' if request.api_key else 'не передан'}, глобальный ключ: {'настроен' if settings.REPLICATE_API_TOKEN else 'не настроен'}")
-        api_key = get_user_replicate_key(user.user_id, request.api_key)
-        if not api_key:
+        # Каждый пользователь должен использовать свой ключ
+        logger.info(f"[GENERATION] API ключ из запроса: {'передан' if request.api_key else 'не передан'}")
+        if not request.api_key or not request.api_key.strip():
             raise HTTPException(
                 status_code=400,
-                detail="Replicate API ключ не указан. Пожалуйста, укажите свой ключ в запросе или используйте глобальный ключ (если настроен)."
+                detail="API ключ Replicate не указан. Пожалуйста, введите свой ключ Replicate API в настройках."
             )
+        api_key = get_user_replicate_key(user.user_id, request.api_key)
         
         # Создаем запись в БД
         with db_service.get_session() as session:
