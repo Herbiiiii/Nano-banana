@@ -2081,9 +2081,16 @@ function showGenerationParams(id, prompt, resolution, aspectRatio, errorMessage)
                 </div>
             </div>
             ${safeErrorMessage ? `
-                <div class="mt-3 p-3" style="background: rgba(229, 62, 62, 0.2); border: 1px solid rgba(229, 62, 62, 0.5); border-radius: 8px;">
-                    <p class="mb-2 text-danger"><strong><i class="fas fa-exclamation-triangle me-2"></i>Ошибка генерации:</strong></p>
-                    <p class="mb-0 small text-light" style="opacity: 0.95; word-wrap: break-word; white-space: pre-wrap;">${safeErrorMessage}</p>
+                <div class="mt-3 p-3" style="background: rgba(229, 62, 62, 0.2); border: 2px solid rgba(229, 62, 62, 0.7); border-radius: 8px;">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <p class="mb-0 text-danger"><strong><i class="fas fa-exclamation-triangle me-2"></i>Ошибка генерации:</strong></p>
+                        <button class="btn btn-sm btn-outline-light copy-error-btn" data-error-id="${id}" title="Скопировать лог ошибки" style="font-size: 0.75rem; padding: 0.25rem 0.5rem;">
+                            <i class="fas fa-copy me-1"></i>Копировать лог
+                        </button>
+                    </div>
+                    <div class="error-message-content" style="background: rgba(0, 0, 0, 0.3); padding: 0.75rem; border-radius: 4px; max-height: 200px; overflow-y: auto;">
+                        <p class="mb-0 small text-light" style="opacity: 0.95; word-wrap: break-word; white-space: pre-wrap; font-family: 'Courier New', monospace;">${safeErrorMessage}</p>
+                    </div>
                 </div>
             ` : ''}
         </div>
@@ -2092,6 +2099,16 @@ function showGenerationParams(id, prompt, resolution, aspectRatio, errorMessage)
     modal.appendChild(content);
     document.body.appendChild(modal);
     document.body.style.overflow = 'hidden';
+    
+    // Обработчик кнопки копирования лога ошибки
+    if (safeErrorMessage) {
+        const copyBtn = modal.querySelector('.copy-error-btn');
+        if (copyBtn) {
+            copyBtn.addEventListener('click', async () => {
+                await copyErrorLog(id, prompt, resolution, aspectRatio, errorMessage);
+            });
+        }
+    }
     
     // Закрытие по Escape
     const escapeHandler = (e) => {
@@ -2103,6 +2120,63 @@ function showGenerationParams(id, prompt, resolution, aspectRatio, errorMessage)
     document.addEventListener('keydown', escapeHandler);
     
     console.log('[MODAL] Модальное окно параметров открыто, errorMessage:', errorMessage);
+}
+
+// Функция для копирования лога ошибки в буфер обмена
+async function copyErrorLog(id, prompt, resolution, aspectRatio, errorMessage) {
+    try {
+        // Формируем полный лог ошибки
+        const errorLog = `=== ЛОГ ОШИБКИ ГЕНЕРАЦИИ ===
+ID генерации: ${id}
+Дата: ${new Date().toLocaleString('ru-RU')}
+
+ПАРАМЕТРЫ ГЕНЕРАЦИИ:
+Промпт: ${prompt || 'Не указано'}
+Разрешение: ${resolution || 'Не указано'}
+Соотношение сторон: ${aspectRatio || 'Не указано'}
+
+ОШИБКА:
+${errorMessage || 'Ошибка не указана'}
+
+=== КОНЕЦ ЛОГА ===`;
+
+        // Копируем в буфер обмена
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(errorLog);
+            showToast('Лог ошибки скопирован в буфер обмена', 'success');
+            
+            // Визуальная обратная связь
+            const copyBtn = document.querySelector(`.copy-error-btn[data-error-id="${id}"]`);
+            if (copyBtn) {
+                const originalHTML = copyBtn.innerHTML;
+                copyBtn.innerHTML = '<i class="fas fa-check me-1"></i>Скопировано!';
+                copyBtn.classList.add('btn-success');
+                copyBtn.classList.remove('btn-outline-light');
+                
+                setTimeout(() => {
+                    copyBtn.innerHTML = originalHTML;
+                    copyBtn.classList.remove('btn-success');
+                    copyBtn.classList.add('btn-outline-light');
+                }, 2000);
+            }
+        } else {
+            // Fallback для старых браузеров
+            const textArea = document.createElement('textarea');
+            textArea.value = errorLog;
+            textArea.style.position = 'fixed';
+            textArea.style.left = '-999999px';
+            document.body.appendChild(textArea);
+            textArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textArea);
+            showToast('Лог ошибки скопирован в буфер обмена', 'success');
+        }
+        
+        console.log('[COPY] Лог ошибки скопирован:', errorLog);
+    } catch (error) {
+        console.error('[COPY] Ошибка копирования лога:', error);
+        showToast('Ошибка копирования лога: ' + error.message, 'error');
+    }
 }
 
 function closeGenerationParams() {
