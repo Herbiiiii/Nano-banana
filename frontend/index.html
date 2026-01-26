@@ -84,8 +84,10 @@
                             <!-- Референсные изображения -->
                             <div class="mb-3" id="referenceImagesSection" style="display: none;">
                                 <label for="referenceImages" class="form-label">Референсные изображения (до 4)</label>
-                                <!-- Визуальная зона для drag-and-drop и вставки -->
-                                <div id="referenceDropZone" class="reference-drop-zone" style="border: 2px dashed rgba(102, 126, 234, 0.5); border-radius: 8px; padding: 2rem; text-align: center; background: rgba(102, 126, 234, 0.05); cursor: pointer; transition: all 0.3s ease; margin-bottom: 1rem;">
+                                <!-- Превью референсов (показывается когда есть референсы) -->
+                                <div id="referencePreview" class="mb-2 d-flex flex-wrap"></div>
+                                <!-- Визуальная зона для drag-and-drop и вставки (скрывается когда 4 референса) -->
+                                <div id="referenceDropZone" class="reference-drop-zone" style="border: 2px dashed rgba(102, 126, 234, 0.5); border-radius: 8px; padding: 2rem; text-align: center; background: rgba(102, 126, 234, 0.05); cursor: pointer; transition: all 0.3s ease;">
                                     <div class="reference-drop-zone-content">
                                         <i class="fas fa-images mb-3" style="font-size: 3rem; color: rgba(102, 126, 234, 0.7);"></i>
                                         <p class="text-light mb-2 fw-bold">Перетащите изображение сюда</p>
@@ -102,7 +104,6 @@
                                     </div>
                                 </div>
                                 <input type="file" class="form-control d-none" id="referenceImages" accept="image/*" multiple>
-                                <div id="referencePreview" class="mt-2 d-flex flex-wrap"></div>
                             </div>
 
                             <!-- Промпт -->

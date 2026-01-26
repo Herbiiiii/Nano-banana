@@ -98,7 +98,8 @@ function processReferenceFile(file) {
                 height: img.height,
                 originalRatio: `${img.width}:${img.height}` // Сохраняем оригинальное соотношение
             };
-            referenceImages.push(refObj);
+            // Добавляем в начало массива (новые сверху)
+            referenceImages.unshift(refObj);
             console.log(`[REFERENCE] Загружен референс ${referenceImages.length}: ${img.width}x${img.height} → ${aspectRatio}`);
             updateReferencePreview();
             updateAspectRatioOptions();
@@ -135,7 +136,7 @@ function updateReferencePreview() {
         }
     }
     
-    // Добавляем новые референсы в начало (вверху)
+    // Отображаем референсы в порядке массива (первые элементы слева)
     referenceImages.forEach((ref, index) => {
         const container = document.createElement('div');
         container.className = 'position-relative d-inline-block me-2 mb-2 reference-item';
@@ -248,8 +249,8 @@ function updateReferencePreview() {
         container.appendChild(img);
         container.appendChild(label);
         container.appendChild(removeBtn);
-        // Добавляем в начало (новые сверху)
-        preview.insertBefore(container, preview.firstChild);
+        // Добавляем в конец (порядок соответствует массиву)
+        preview.appendChild(container);
     });
     
     // Добавляем обработчики на сам контейнер preview для drop в пустое пространство
@@ -1448,7 +1449,16 @@ async function loadGallery() {
         }
         
         console.log('[GALLERY] Получено генераций:', generations.length);
-        console.log('[GALLERY] Статусы генераций:', generations.map(g => ({id: g.id, status: g.status})));
+        console.log('[GALLERY] Статусы генераций:', generations.map(g => ({id: g.id, status: g.status, error_message: g.error_message ? g.error_message.substring(0, 50) + '...' : null})));
+        
+        // Логируем генерации с ошибками
+        const failedGenerations = generations.filter(g => g.status === 'failed');
+        if (failedGenerations.length > 0) {
+            console.log('[GALLERY] Генерации с ошибками:', failedGenerations.map(g => ({
+                id: g.id,
+                error_message: g.error_message || 'Нет error_message'
+            })));
+        }
         
         // Подсчет активных генераций
         const activeCount = generations.filter(g => g.status === 'pending' || g.status === 'running').length;
@@ -1619,6 +1629,12 @@ async function loadGallery() {
                         
                         if (response.ok) {
                             const gen = await response.json();
+                            console.log('[INFO] Загружены данные генерации:', {
+                                id: gen.id,
+                                status: gen.status,
+                                has_error_message: !!gen.error_message,
+                                error_message: gen.error_message ? gen.error_message.substring(0, 100) + '...' : 'нет'
+                            });
                             showGenerationParams(
                                 gen.id,
                                 gen.prompt || '',
@@ -1627,7 +1643,9 @@ async function loadGallery() {
                                 gen.error_message || ''
                             );
                         } else {
-                            throw new Error('Ошибка загрузки данных');
+                            const errorData = await response.json().catch(() => ({}));
+                            console.error('[INFO] Ошибка загрузки данных генерации:', response.status, errorData);
+                            throw new Error(errorData.detail || 'Ошибка загрузки данных');
                         }
                     } catch (error) {
                         console.error('[INFO] Ошибка загрузки данных генерации:', error);

@@ -400,8 +400,17 @@ async def list_generations(
             
             logger.info(f"[LIST] Возвращаем {len(generations)} генераций (limit={limit_val}, offset={offset_val})")
             
-            result = [
-                ImageResponse(
+            result = []
+            for gen in generations:
+                # Извлекаем error_message из generation_metadata
+                error_msg = None
+                if gen.generation_metadata:
+                    error_msg = gen.generation_metadata.get('error')
+                    # Логируем для отладки
+                    if error_msg and gen.status == 'failed':
+                        logger.info(f"[LIST] Генерация {gen.id} имеет ошибку: {error_msg[:100]}...")
+                
+                result.append(ImageResponse(
                     id=gen.id,
                     user_id=gen.user_id,
                     prompt=gen.prompt,
@@ -412,10 +421,8 @@ async def list_generations(
                     result_url=gen.result_url,
                     status=gen.status,
                     created_at=gen.created_at,
-                    error_message=gen.generation_metadata.get('error') if gen.generation_metadata else None
-                )
-                for gen in generations
-            ]
+                    error_message=error_msg
+                ))
             
             # Логируем URL для отладки
             for resp in result:
@@ -437,6 +444,9 @@ async def list_generations(
                     gen_dict['updated_at'] = gen_dict['updated_at'].isoformat() if hasattr(gen_dict['updated_at'], 'isoformat') else str(gen_dict['updated_at'])
                 if 'completed_at' in gen_dict and gen_dict.get('completed_at'):
                     gen_dict['completed_at'] = gen_dict['completed_at'].isoformat() if hasattr(gen_dict['completed_at'], 'isoformat') else str(gen_dict['completed_at'])
+                # Логируем error_message для отладки
+                if gen_dict.get('error_message') and gen_dict.get('status') == 'failed':
+                    logger.info(f"[LIST] Генерация {gen_dict['id']} в JSON имеет error_message: {gen_dict['error_message'][:100]}...")
                 generations_data.append(gen_dict)
             
             return JSONResponse(content={
