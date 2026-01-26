@@ -135,6 +135,7 @@ function updateReferencePreview() {
         }
     }
     
+    // Добавляем новые референсы в начало (вверху)
     referenceImages.forEach((ref, index) => {
         const container = document.createElement('div');
         container.className = 'position-relative d-inline-block me-2 mb-2 reference-item';
@@ -247,7 +248,8 @@ function updateReferencePreview() {
         container.appendChild(img);
         container.appendChild(label);
         container.appendChild(removeBtn);
-        preview.appendChild(container);
+        // Добавляем в начало (новые сверху)
+        preview.insertBefore(container, preview.firstChild);
     });
     
     // Добавляем обработчики на сам контейнер preview для drop в пустое пространство

@@ -206,13 +206,38 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                 # Сохраняем ошибку в generation_metadata
                 if not generation.generation_metadata:
                     generation.generation_metadata = {}
-                generation.generation_metadata['error'] = result['error']
+                error_message = result.get('error', 'Неизвестная ошибка')
+                generation.generation_metadata['error'] = error_message
+                
+                # Сохраняем ошибку в файл
+                from app.services.ErrorLogger import save_error_to_file
+                error_data = {
+                    "type": "generation_error",
+                    "generation_id": generation_id,
+                    "user_id": user_id,
+                    "prompt": request_data.get('prompt'),
+                    "error": error_message,
+                    "status": "failed"
+                }
+                save_error_to_file(error_data)
             
             session.commit()
             logger.info(f"[GENERATION] Генерация {generation_id} завершена со статусом {generation.status}")
             
     except Exception as e:
         logger.error(f"[GENERATION] Ошибка обработки генерации {generation_id}: {e}", exc_info=True)
+        
+        # Сохраняем ошибку в файл
+        from app.services.ErrorLogger import save_error_to_file
+        error_data = {
+            "type": "generation_exception",
+            "generation_id": generation_id,
+            "user_id": user_id,
+            "error": str(e),
+            "error_type": type(e).__name__,
+        }
+        save_error_to_file(error_data)
+        
         with db_service.get_session() as session:
             generation = session.query(Generation).filter(Generation.id == generation_id).first()
             if generation:

@@ -14,12 +14,43 @@ from app.routers import images, auth, users
 from app.services.DBService import db_service
 import logging
 import os
+from logging.handlers import RotatingFileHandler
+from app.services.ErrorLogger import get_logs_dir, save_error_to_file
 
-# Настройка логирования
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+# Создаем папки для логов если их нет
+logs_dir = get_logs_dir()
+os.makedirs(logs_dir, exist_ok=True)
+
+# Настройка логирования в файл с ротацией (лимит 1GB)
+log_file = os.path.join(logs_dir, "nano_banana.log")
+# 1GB = 1024 * 1024 * 1024 байт, но для удобства используем 1000MB
+max_bytes = 1000 * 1024 * 1024  # 1GB
+backup_count = 5  # Количество резервных файлов
+
+# Создаем ротирующий handler
+file_handler = RotatingFileHandler(
+    log_file,
+    maxBytes=max_bytes,
+    backupCount=backup_count,
+    encoding='utf-8'
 )
+file_handler.setLevel(logging.INFO)
+file_handler.setFormatter(logging.Formatter(
+    "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+))
+
+# Консольный handler
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+console_handler.setFormatter(logging.Formatter(
+    "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+))
+
+# Настройка root logger
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+root_logger.addHandler(file_handler)
+root_logger.addHandler(console_handler)
 
 logger = logging.getLogger(__name__)
 
@@ -71,12 +102,54 @@ app.add_middleware(CSPMiddleware)
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     """Обработчик ошибок валидации с подробным логированием"""
+    error_data = {
+        "type": "validation_error",
+        "method": request.method,
+        "url": str(request.url),
+        "errors": exc.errors(),
+        "path": str(request.url.path),
+        "query_params": dict(request.query_params),
+    }
+    
+    try:
+        body = await request.body()
+        if body:
+            error_data["request_body"] = body.decode('utf-8', errors='ignore')[:1000]  # Ограничиваем размер
+    except:
+        pass
+    
     logger.error(f"[VALIDATION] Ошибка валидации для {request.method} {request.url}")
     logger.error(f"[VALIDATION] Детали ошибки: {exc.errors()}")
-    logger.error(f"[VALIDATION] Тело запроса: {await request.body()}")
+    
+    # Сохраняем в файл ошибок
+    save_error_to_file(error_data)
+    
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         content={"detail": exc.errors()}
+    )
+
+# Глобальный обработчик всех исключений
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Глобальный обработчик всех исключений"""
+    error_data = {
+        "type": "unhandled_exception",
+        "method": request.method,
+        "url": str(request.url),
+        "error": str(exc),
+        "error_type": type(exc).__name__,
+        "path": str(request.url.path),
+    }
+    
+    logger.error(f"[GLOBAL_ERROR] Необработанное исключение: {exc}", exc_info=True)
+    
+    # Сохраняем в файл ошибок
+    save_error_to_file(error_data)
+    
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": "Внутренняя ошибка сервера"}
     )
 
 # Инициализация БД при старте

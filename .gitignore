@@ -18,6 +18,9 @@ ENV/
 *.log
 logs/
 nano_banana.log
+# Но не игнорируем структуру папок
+!logs/.gitkeep
+!logs/errors/.gitkeep
 
 # IDE
 .vscode/

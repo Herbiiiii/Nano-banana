@@ -35,7 +35,7 @@ services:
       # ВАЖНО: Измените эти значения для продакшена через .env!
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin123}
-      MINIO_BROWSER_REDIRECT_URL: http://localhost:9001
+      MINIO_BROWSER_REDIRECT_URL: ${MINIO_CONSOLE_URL:-http://localhost:9001}
     ports:
       - "9000:9000"  # API
       - "9001:9001"  # Console
@@ -100,6 +100,11 @@ services:
       - ./app:/app/app
       - ./frontend:/app/frontend
       - ./logs:/app/logs
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "10"
     networks:
       - nano_banana_network
     restart: unless-stopped
