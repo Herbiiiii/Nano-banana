@@ -57,20 +57,46 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                 raise ValueError("API ключ Replicate не указан. Пожалуйста, введите свой ключ Replicate API в настройках.")
             api_key = get_user_replicate_key(user_id, api_key_from_request)
             
-            # Создаем сервис Replicate
-            replicate_service = ReplicateService(api_token=api_key)
+            # Создаем сервис Replicate и генерируем изображение
+            # Обрабатываем ошибки аутентификации и другие ошибки
+            try:
+                replicate_service = ReplicateService(api_token=api_key)
+            except Exception as init_error:
+                error_msg = f"Ошибка инициализации Replicate клиента: {str(init_error)}"
+                logger.error(f"[GENERATION] {error_msg}")
+                generation.status = "failed"
+                generation.completed_at = datetime.utcnow()
+                if not generation.generation_metadata:
+                    generation.generation_metadata = {}
+                generation.generation_metadata['error'] = error_msg
+                session.commit()
+                logger.error(f"[GENERATION] Генерация {generation_id} завершена с ошибкой инициализации: {error_msg}")
+                return
             
-            # Генерируем изображение
-            result = replicate_service.generate_image(
-                prompt=request_data['prompt'],
-                negative_prompt=request_data.get('negative_prompt'),
-                resolution=request_data.get('resolution', '1K'),
-                aspect_ratio=request_data.get('aspect_ratio', '1:1'),
-                guidance_scale=request_data.get('guidance_scale', 7.5),
-                num_inference_steps=request_data.get('num_inference_steps', 50),
-                seed=request_data.get('seed'),
-                reference_images=request_data.get('reference_images')
-            )
+            try:
+                # Генерируем изображение
+                result = replicate_service.generate_image(
+                    prompt=request_data['prompt'],
+                    negative_prompt=request_data.get('negative_prompt'),
+                    resolution=request_data.get('resolution', '1K'),
+                    aspect_ratio=request_data.get('aspect_ratio', '1:1'),
+                    guidance_scale=request_data.get('guidance_scale', 7.5),
+                    num_inference_steps=request_data.get('num_inference_steps', 50),
+                    seed=request_data.get('seed'),
+                    reference_images=request_data.get('reference_images')
+                )
+            except Exception as gen_error:
+                # Ошибка при генерации (например, неправильный API ключ)
+                error_msg = f"Ошибка генерации через Replicate API: {str(gen_error)}"
+                logger.error(f"[GENERATION] {error_msg}", exc_info=True)
+                generation.status = "failed"
+                generation.completed_at = datetime.utcnow()
+                if not generation.generation_metadata:
+                    generation.generation_metadata = {}
+                generation.generation_metadata['error'] = error_msg
+                session.commit()
+                logger.error(f"[GENERATION] Генерация {generation_id} завершена с ошибкой генерации: {error_msg}")
+                return
             
             if result['success']:
                 # Логируем что получили от ReplicateService
@@ -201,12 +227,23 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                 generation.status = "completed"
                 generation.completed_at = datetime.utcnow()
             else:
+                # Генерация не удалась - сохраняем ошибку
                 generation.status = "failed"
                 generation.completed_at = datetime.utcnow()
                 # Сохраняем ошибку в generation_metadata
                 if not generation.generation_metadata:
                     generation.generation_metadata = {}
+                
+                # Извлекаем ошибку из result
                 error_message = result.get('error', 'Неизвестная ошибка')
+                if not error_message or error_message == 'Неизвестная ошибка':
+                    # Если ошибка не указана, проверяем другие возможные поля
+                    error_message = result.get('message', result.get('detail', 'Неизвестная ошибка генерации'))
+                
+                # Убеждаемся что error_message - строка
+                if not isinstance(error_message, str):
+                    error_message = str(error_message)
+                
                 generation.generation_metadata['error'] = error_message
                 
                 logger.error(f"[GENERATION] Генерация {generation_id} завершена с ошибкой. Сохраняем error_message: {error_message[:200]}...")
