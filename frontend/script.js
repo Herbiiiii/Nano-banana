@@ -227,13 +227,30 @@ function updateReferencePreview() {
         // Обновляем метку при изменении индекса
         label.setAttribute('data-ref-index', index);
         
+        // Кнопка скачивания референса
+        const downloadBtn = document.createElement('button');
+        downloadBtn.className = 'position-absolute top-0 end-0 btn btn-sm btn-success p-0';
+        downloadBtn.style.width = '20px';
+        downloadBtn.style.height = '20px';
+        downloadBtn.style.fontSize = '10px';
+        downloadBtn.style.lineHeight = '1';
+        downloadBtn.style.zIndex = '5';
+        downloadBtn.innerHTML = '<i class="fas fa-download"></i>';
+        downloadBtn.title = 'Скачать референс';
+        downloadBtn.onclick = (e) => {
+            e.stopPropagation();
+            downloadReferenceImage(ref.dataUrl, `reference_${index + 1}`);
+        };
+        
         const removeBtn = document.createElement('button');
-        removeBtn.className = 'position-absolute top-0 end-0 btn btn-sm btn-danger p-0';
+        removeBtn.className = 'position-absolute bottom-0 end-0 btn btn-sm btn-danger p-0';
         removeBtn.style.width = '20px';
         removeBtn.style.height = '20px';
         removeBtn.style.fontSize = '12px';
         removeBtn.style.lineHeight = '1';
+        removeBtn.style.zIndex = '5';
         removeBtn.innerHTML = '×';
+        removeBtn.title = 'Удалить референс';
         removeBtn.onclick = (e) => {
             e.stopPropagation();
             referenceImages = referenceImages.filter(r => r.id !== ref.id);
@@ -247,6 +264,7 @@ function updateReferencePreview() {
         
             container.appendChild(img);
             container.appendChild(label);
+            container.appendChild(downloadBtn);
             container.appendChild(removeBtn);
             // Добавляем в контейнер референсов
             refsContainer.appendChild(container);
@@ -325,12 +343,8 @@ function updateReferencePreview() {
         }
     }
     
-    // Скрываем зону только если достигнут лимит
-    if (referenceImages.length >= 4) {
-        dropZone.style.display = 'none';
-    } else {
-        dropZone.style.display = 'block';
-    }
+    // НЕ скрываем зону даже при достижении лимита - показываем все референсы
+    dropZone.style.display = 'block';
     
     // Обработчики для drop-зоны (если перетащили между референсами)
     const refsContainer = dropZoneContent.querySelector('.d-flex.flex-wrap');
@@ -1714,14 +1728,20 @@ async function loadGallery() {
                                 id: gen.id,
                                 status: gen.status,
                                 has_error_message: !!gen.error_message,
-                                error_message: gen.error_message ? gen.error_message.substring(0, 100) + '...' : 'нет'
+                                error_message: gen.error_message ? gen.error_message.substring(0, 100) + '...' : 'нет',
+                                error_message_full: gen.error_message || 'нет'
                             });
+                            
+                            // Убеждаемся что error_message передается
+                            const errorMsg = gen.error_message || '';
+                            console.log('[INFO] Передаем error_message в showGenerationParams:', errorMsg ? errorMsg.substring(0, 50) + '...' : 'пусто');
+                            
                             showGenerationParams(
                                 gen.id,
                                 gen.prompt || '',
                                 gen.resolution || '',
                                 gen.aspect_ratio || '',
-                                gen.error_message || ''
+                                errorMsg
                             );
                         } else {
                             const errorData = await response.json().catch(() => ({}));
@@ -2029,6 +2049,47 @@ function showToast(message, type = 'success') {
     toastHeader.className = `toast-header bg-${type === 'success' ? 'success' : type === 'error' ? 'danger' : 'info'} text-white`;
     
     notificationToast.show();
+}
+
+// Функция для скачивания референсного изображения
+async function downloadReferenceImage(dataUrl, filename) {
+    try {
+        console.log('[DOWNLOAD] Начало скачивания референса:', filename);
+        
+        // Если это data URL, конвертируем в blob
+        let blob;
+        if (dataUrl.startsWith('data:')) {
+            const response = await fetch(dataUrl);
+            blob = await response.blob();
+        } else {
+            // Если это URL, загружаем
+            const response = await fetch(dataUrl);
+            if (!response.ok) {
+                throw new Error(`Ошибка загрузки: ${response.status}`);
+            }
+            blob = await response.blob();
+        }
+        
+        // Создаем временную ссылку для скачивания
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${filename}_${Date.now()}.jpg`;
+        
+        // Добавляем ссылку в DOM, кликаем и удаляем
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        
+        // Освобождаем URL
+        window.URL.revokeObjectURL(url);
+        
+        console.log('[DOWNLOAD] Референс успешно скачан');
+        showToast('Референс успешно скачан', 'success');
+    } catch (error) {
+        console.error('[DOWNLOAD] Ошибка скачивания референса:', error);
+        showToast('Ошибка скачивания референса: ' + error.message, 'error');
+    }
 }
 
 // Функция для скачивания изображения
