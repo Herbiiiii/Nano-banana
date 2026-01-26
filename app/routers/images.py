@@ -69,6 +69,9 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                 if not generation.generation_metadata:
                     generation.generation_metadata = {}
                 generation.generation_metadata['error'] = error_msg
+                # ВАЖНО: Уведомляем SQLAlchemy об изменении JSON поля
+                from sqlalchemy.orm.attributes import flag_modified
+                flag_modified(generation, "generation_metadata")
                 session.commit()
                 logger.error(f"[GENERATION] Генерация {generation_id} завершена с ошибкой инициализации: {error_msg}")
                 return
@@ -94,6 +97,9 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                 if not generation.generation_metadata:
                     generation.generation_metadata = {}
                 generation.generation_metadata['error'] = error_msg
+                # ВАЖНО: Уведомляем SQLAlchemy об изменении JSON поля
+                from sqlalchemy.orm.attributes import flag_modified
+                flag_modified(generation, "generation_metadata")
                 session.commit()
                 logger.error(f"[GENERATION] Генерация {generation_id} завершена с ошибкой генерации: {error_msg}")
                 return
@@ -198,6 +204,9 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                                     if not generation.generation_metadata:
                                         generation.generation_metadata = {}
                                     generation.generation_metadata['error'] = error_msg
+                                    # ВАЖНО: Уведомляем SQLAlchemy об изменении JSON поля
+                                    from sqlalchemy.orm.attributes import flag_modified
+                                    flag_modified(generation, "generation_metadata")
                                     session.commit()
                                     logger.error(f"[GENERATION] Генерация {generation.id} завершена с ошибкой: {error_msg}")
                                     return
@@ -246,6 +255,10 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                 
                 generation.generation_metadata['error'] = error_message
                 
+                # ВАЖНО: Уведомляем SQLAlchemy об изменении JSON поля
+                from sqlalchemy.orm.attributes import flag_modified
+                flag_modified(generation, "generation_metadata")
+                
                 logger.error(f"[GENERATION] Генерация {generation_id} завершена с ошибкой. Сохраняем error_message: {error_message[:200]}...")
                 logger.info(f"[GENERATION] generation_metadata перед commit: {generation.generation_metadata}")
                 
@@ -292,6 +305,9 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                 if not generation.generation_metadata:
                     generation.generation_metadata = {}
                 generation.generation_metadata['error'] = str(e)
+                # ВАЖНО: Уведомляем SQLAlchemy об изменении JSON поля
+                from sqlalchemy.orm.attributes import flag_modified
+                flag_modified(generation, "generation_metadata")
                 session.commit()
 
 @router.post("/generate", response_model=ImageGenerationResponse)
@@ -500,7 +516,11 @@ async def list_generations(
                 error_msg = None
                 if gen.generation_metadata:
                     error_msg = gen.generation_metadata.get('error')
-                # Убрали избыточное логирование каждой генерации
+                    # Логируем только для failed генераций без error_message (проблема!)
+                    if gen.status == 'failed' and not error_msg:
+                        logger.warning(f"[LIST] Генерация {gen.id} имеет статус 'failed', но error_message отсутствует в generation_metadata: {gen.generation_metadata}")
+                elif gen.status == 'failed':
+                    logger.warning(f"[LIST] Генерация {gen.id} имеет статус 'failed', но generation_metadata отсутствует")
                 
                 result.append(ImageResponse(
                     id=gen.id,
