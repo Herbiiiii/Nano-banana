@@ -216,43 +216,71 @@ function updateReferencePreview() {
         img.style.pointerEvents = 'none'; // Отключаем события мыши для изображения
         img.style.userSelect = 'none'; // Отключаем выделение
         
+        // Метка "Реф" сверху
         const label = document.createElement('div');
         label.className = 'position-absolute top-0 start-0 px-1';
         label.style.fontSize = '10px';
         label.style.borderRadius = '0 0 4px 0';
-        label.style.background = 'linear-gradient(135deg, var(--metal-gray) 0%, var(--metal-gray-dark) 100%)';
-        label.style.color = 'var(--text-primary)';
-        label.style.border = '1px solid var(--border-color)';
+        label.style.background = 'linear-gradient(135deg, rgba(74, 85, 104, 0.7) 0%, rgba(74, 85, 104, 0.5) 100%)';
+        label.style.color = '#ffffff';
+        label.style.border = '1px solid rgba(102, 126, 234, 0.6)';
+        label.style.fontWeight = '700';
+        label.style.zIndex = '6';
         label.textContent = `Реф${index + 1}`;
-        // Обновляем метку при изменении индекса
         label.setAttribute('data-ref-index', index);
         
-        // Кнопка скачивания референса
+        // Кнопка скачивания референса (в правом верхнем углу, стиль как "завершено")
         const downloadBtn = document.createElement('button');
-        downloadBtn.className = 'position-absolute top-0 end-0 btn btn-sm btn-success p-0';
-        downloadBtn.style.width = '20px';
-        downloadBtn.style.height = '20px';
-        downloadBtn.style.fontSize = '10px';
+        downloadBtn.type = 'button'; // ВАЖНО: предотвращаем submit формы
+        downloadBtn.className = 'position-absolute top-0 end-0 btn btn-sm p-0';
+        downloadBtn.style.width = '24px';
+        downloadBtn.style.height = '24px';
+        downloadBtn.style.fontSize = '11px';
         downloadBtn.style.lineHeight = '1';
-        downloadBtn.style.zIndex = '5';
+        downloadBtn.style.zIndex = '6';
+        downloadBtn.style.background = 'linear-gradient(135deg, rgba(74, 85, 104, 0.7) 0%, rgba(72, 187, 120, 0.5) 100%)';
+        downloadBtn.style.border = '1px solid rgba(72, 187, 120, 0.6)';
+        downloadBtn.style.color = '#ffffff';
+        downloadBtn.style.borderRadius = '4px';
+        downloadBtn.style.cursor = 'pointer';
+        downloadBtn.style.display = 'flex';
+        downloadBtn.style.alignItems = 'center';
+        downloadBtn.style.justifyContent = 'center';
         downloadBtn.innerHTML = '<i class="fas fa-download"></i>';
         downloadBtn.title = 'Скачать референс';
-        downloadBtn.onclick = (e) => {
+        downloadBtn.addEventListener('click', (e) => {
+            e.preventDefault();
             e.stopPropagation();
+            e.stopImmediatePropagation();
+            console.log('[REFERENCE] Скачивание референса', index + 1);
             downloadReferenceImage(ref.dataUrl, `reference_${index + 1}`);
-        };
+        }, true); // Используем capture phase для приоритета
         
+        // Кнопка удаления (по центру, стиль как "ошибка")
         const removeBtn = document.createElement('button');
-        removeBtn.className = 'position-absolute bottom-0 end-0 btn btn-sm btn-danger p-0';
-        removeBtn.style.width = '20px';
-        removeBtn.style.height = '20px';
+        removeBtn.type = 'button'; // ВАЖНО: предотвращаем submit формы
+        removeBtn.className = 'position-absolute top-1/2 start-1/2 btn btn-sm p-0';
+        removeBtn.style.transform = 'translate(-50%, -50%)';
+        removeBtn.style.width = '24px';
+        removeBtn.style.height = '24px';
         removeBtn.style.fontSize = '12px';
         removeBtn.style.lineHeight = '1';
-        removeBtn.style.zIndex = '5';
+        removeBtn.style.zIndex = '6';
+        removeBtn.style.background = 'linear-gradient(135deg, rgba(74, 85, 104, 0.7) 0%, rgba(229, 62, 62, 0.5) 100%)';
+        removeBtn.style.border = '1px solid rgba(229, 62, 62, 0.6)';
+        removeBtn.style.color = '#ffffff';
+        removeBtn.style.borderRadius = '4px';
+        removeBtn.style.cursor = 'pointer';
+        removeBtn.style.display = 'flex';
+        removeBtn.style.alignItems = 'center';
+        removeBtn.style.justifyContent = 'center';
+        removeBtn.style.fontWeight = '700';
         removeBtn.innerHTML = '×';
         removeBtn.title = 'Удалить референс';
-        removeBtn.onclick = (e) => {
+        removeBtn.addEventListener('click', (e) => {
+            e.preventDefault();
             e.stopPropagation();
+            e.stopImmediatePropagation();
             referenceImages = referenceImages.filter(r => r.id !== ref.id);
             // Если удалили все референсы, сбрасываем флаг
             if (referenceImages.length === 0) {
@@ -260,7 +288,7 @@ function updateReferencePreview() {
             }
             updateReferencePreview();
             updateAspectRatioOptions();
-        };
+        }, true); // Используем capture phase для приоритета
         
             container.appendChild(img);
             container.appendChild(label);
@@ -2200,6 +2228,15 @@ function closeFullscreenImage() {
 
 // Функция для показа параметров генерации
 function showGenerationParams(id, prompt, resolution, aspectRatio, errorMessage) {
+    // Логируем полученные данные
+    console.log('[SHOW_PARAMS] Получены параметры:', {
+        id: id,
+        has_errorMessage: !!errorMessage,
+        errorMessage_type: typeof errorMessage,
+        errorMessage_length: errorMessage ? errorMessage.length : 0,
+        errorMessage_preview: errorMessage ? errorMessage.substring(0, 100) : 'пусто'
+    });
+    
     // Закрываем предыдущее модальное окно если открыто
     const existingModal = document.querySelector('.generation-params-modal');
     if (existingModal) {
@@ -2217,7 +2254,14 @@ function showGenerationParams(id, prompt, resolution, aspectRatio, errorMessage)
     const safePrompt = (prompt || '').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     const safeResolution = (resolution || 'Не указано').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const safeAspectRatio = (aspectRatio || 'Не указано').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const safeErrorMessage = errorMessage ? errorMessage.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;') : '';
+    // Убеждаемся что errorMessage обрабатывается правильно
+    const safeErrorMessage = (errorMessage && errorMessage.trim()) ? errorMessage.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;') : '';
+    
+    console.log('[SHOW_PARAMS] После обработки safeErrorMessage:', {
+        has_safeErrorMessage: !!safeErrorMessage,
+        safeErrorMessage_length: safeErrorMessage ? safeErrorMessage.length : 0,
+        safeErrorMessage_preview: safeErrorMessage ? safeErrorMessage.substring(0, 100) : 'пусто'
+    });
     
     const content = document.createElement('div');
     content.innerHTML = `
