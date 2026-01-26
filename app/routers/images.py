@@ -297,12 +297,7 @@ async def generate_image(
         
         # Создаем запись в БД
         with db_service.get_session() as session:
-            # Сохраняем URL референсных изображений для последующего редактирования
-            reference_image_urls = []
-            if request.reference_images:
-                # Если это base64, сохраняем как есть (для последующего использования)
-                reference_image_urls = request.reference_images
-            
+            # Сначала создаем запись генерации для получения ID
             generation = Generation(
                 user_id=user.user_id,
                 prompt=request.prompt,
@@ -314,17 +309,59 @@ async def generate_image(
                 num_inference_steps=request.num_inference_steps,
                 seed=request.seed,
                 status="pending",
-                generation_metadata={
-                    "reference_images_count": len(request.reference_images) if request.reference_images else 0,
-                    "reference_image_urls": reference_image_urls
-                }
+                generation_metadata={}
             )
             session.add(generation)
             session.commit()
             session.refresh(generation)
             
             generation_id = generation.id
-            logger.info(f"[GENERATION] Генерация {generation_id} сохранена в БД для пользователя {user.user_id}")
+            logger.info(f"[GENERATION] Генерация {generation_id} создана в БД для пользователя {user.user_id}")
+            
+            # Теперь сохраняем референсные изображения в MinIO и получаем их URL
+            reference_image_urls = []
+            if request.reference_images:
+                import base64
+                for idx, ref_img_data in enumerate(request.reference_images):
+                    try:
+                        # Если это base64 data URL, извлекаем данные
+                        if ref_img_data.startswith('data:image'):
+                            # Парсим data URL: data:image/jpeg;base64,/9j/4AAQ...
+                            header, base64_data = ref_img_data.split(',', 1)
+                            mime_type = header.split(';')[0].split(':')[1] if ':' in header else 'image/jpeg'
+                            image_bytes = base64.b64decode(base64_data)
+                            
+                            # Определяем расширение файла
+                            ext = 'jpg'
+                            if 'png' in mime_type:
+                                ext = 'png'
+                            elif 'webp' in mime_type:
+                                ext = 'webp'
+                            
+                            # Сохраняем в MinIO
+                            ref_filename = f"references/{datetime.now().strftime('%Y%m%d_%H%M%S')}_{generation_id}_{idx}_{uuid.uuid4().hex[:8]}.{ext}"
+                            upload_result = minio.upload_image(
+                                image_bytes,
+                                ref_filename,
+                                mime_type
+                            )
+                            reference_image_urls.append(upload_result['url'])
+                            logger.info(f"[GENERATION] Референс {idx + 1} сохранен в MinIO: {upload_result['url'][:100]}...")
+                        else:
+                            # Если это уже URL, сохраняем как есть
+                            reference_image_urls.append(ref_img_data)
+                    except Exception as e:
+                        logger.error(f"[GENERATION] Ошибка сохранения референса {idx + 1}: {e}", exc_info=True)
+                        # В случае ошибки сохраняем оригинальный data URL как fallback
+                        reference_image_urls.append(ref_img_data)
+                
+                # Обновляем generation_metadata с URL референсов
+                if not generation.generation_metadata:
+                    generation.generation_metadata = {}
+                generation.generation_metadata['reference_images_count'] = len(request.reference_images)
+                generation.generation_metadata['reference_image_urls'] = reference_image_urls
+                session.commit()
+                logger.info(f"[GENERATION] Референсы сохранены для генерации {generation_id}: {len(reference_image_urls)} URL")
         
         # Запускаем асинхронную обработку
         request_data = request.dict()

@@ -13,6 +13,7 @@ COPY . .
 EXPOSE 8000
 
 # Запуск приложения
+# Лимит размера запроса настраивается через Nginx (client_max_body_size)
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 

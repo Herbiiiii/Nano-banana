@@ -2084,13 +2084,23 @@ async function downloadReferenceImage(dataUrl, filename) {
     try {
         console.log('[DOWNLOAD] Начало скачивания референса:', filename);
         
-        // Если это data URL, конвертируем в blob
         let blob;
+        
+        // Если это data URL, конвертируем напрямую в blob (без fetch для обхода CSP)
         if (dataUrl.startsWith('data:')) {
-            const response = await fetch(dataUrl);
-            blob = await response.blob();
+            // Парсим data URL: data:image/jpeg;base64,/9j/4AAQ...
+            const [header, base64Data] = dataUrl.split(',');
+            const mimeType = header.match(/data:([^;]+)/)?.[1] || 'image/jpeg';
+            
+            // Конвертируем base64 в binary
+            const binaryString = atob(base64Data);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            blob = new Blob([bytes], { type: mimeType });
         } else {
-            // Если это URL, загружаем
+            // Если это обычный URL, загружаем через fetch
             const response = await fetch(dataUrl);
             if (!response.ok) {
                 throw new Error(`Ошибка загрузки: ${response.status}`);
@@ -2098,19 +2108,22 @@ async function downloadReferenceImage(dataUrl, filename) {
             blob = await response.blob();
         }
         
-        // Создаем временную ссылку для скачивания
+        // Создаем blob URL для скачивания
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
         a.download = `${filename}_${Date.now()}.jpg`;
+        a.style.display = 'none';
         
         // Добавляем ссылку в DOM, кликаем и удаляем
         document.body.appendChild(a);
         a.click();
-        document.body.removeChild(a);
         
-        // Освобождаем URL
-        window.URL.revokeObjectURL(url);
+        // Удаляем ссылку и освобождаем URL после небольшой задержки
+        setTimeout(() => {
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+        }, 100);
         
         console.log('[DOWNLOAD] Референс успешно скачан');
         showToast('Референс успешно скачан', 'success');
