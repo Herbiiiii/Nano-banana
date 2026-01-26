@@ -186,21 +186,41 @@ function updateReferencePreview() {
         
         container.addEventListener('drop', (e) => {
             e.preventDefault();
+            e.stopPropagation();
             container.classList.remove('drag-over');
             
             const draggedIndex = parseInt(e.dataTransfer.getData('text/plain'));
             const targetIndex = parseInt(container.dataset.index);
             
-            if (draggedIndex !== targetIndex && draggedIndex >= 0 && targetIndex >= 0) {
-                // Перемещаем элемент в массиве
-                const draggedItem = referenceImages[draggedIndex];
-                referenceImages.splice(draggedIndex, 1);
-                referenceImages.splice(targetIndex, 0, draggedItem);
+            console.log('[REFERENCE] Drop event:', { draggedIndex, targetIndex, arrayLength: referenceImages.length });
+            
+            if (!isNaN(draggedIndex) && !isNaN(targetIndex) && draggedIndex !== targetIndex && 
+                draggedIndex >= 0 && draggedIndex < referenceImages.length &&
+                targetIndex >= 0 && targetIndex < referenceImages.length) {
                 
-                console.log(`[REFERENCE] Референс ${draggedIndex + 1} перемещен на позицию ${targetIndex + 1}`);
+                // Создаем новый массив для безопасности
+                const newArray = [...referenceImages];
+                const draggedItem = newArray[draggedIndex];
+                
+                // Удаляем элемент из старой позиции
+                newArray.splice(draggedIndex, 1);
+                
+                // Вычисляем новую позицию с учетом удаления
+                let newIndex = targetIndex;
+                if (draggedIndex < targetIndex) {
+                    newIndex = targetIndex - 1; // Смещаем влево, т.к. элемент уже удален
+                }
+                
+                // Вставляем в новую позицию
+                newArray.splice(newIndex, 0, draggedItem);
+                
+                // Обновляем основной массив
+                referenceImages = newArray;
+                
+                console.log(`[REFERENCE] Референс ${draggedIndex + 1} перемещен на позицию ${newIndex + 1}`, 
+                    referenceImages.map((r, i) => `Реф${i+1}`));
                 
                 // Обновляем превью с правильной нумерацией (полная перерисовка)
-                // Это обновит все индексы и метки "Реф1", "Реф2" и т.д.
                 updateReferencePreview();
                 updateAspectRatioOptions();
             }
@@ -1761,15 +1781,23 @@ async function loadGallery() {
                             });
                             
                             // Убеждаемся что error_message передается
-                            const errorMsg = gen.error_message || '';
-                            console.log('[INFO] Передаем error_message в showGenerationParams:', errorMsg ? errorMsg.substring(0, 50) + '...' : 'пусто');
+                            const errorMsg = gen.error_message || null; // null вместо пустой строки для старых генераций
+                            console.log('[INFO] Получены данные генерации для модального окна:', {
+                                id: gen.id,
+                                status: gen.status,
+                                has_error_message: !!gen.error_message,
+                                error_message_type: typeof gen.error_message,
+                                error_message_value: gen.error_message ? gen.error_message.substring(0, 100) + '...' : 'null/пусто',
+                                error_message_full_length: gen.error_message ? gen.error_message.length : 0
+                            });
+                            console.log('[INFO] Передаем error_message в showGenerationParams:', errorMsg ? errorMsg.substring(0, 50) + '...' : (errorMsg === null ? 'null' : 'пустая строка'));
                             
                             showGenerationParams(
                                 gen.id,
                                 gen.prompt || '',
                                 gen.resolution || '',
                                 gen.aspect_ratio || '',
-                                errorMsg
+                                errorMsg  // null для старых генераций без ошибок
                             );
                         } else {
                             const errorData = await response.json().catch(() => ({}));

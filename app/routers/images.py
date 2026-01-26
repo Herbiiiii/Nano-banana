@@ -440,12 +440,16 @@ async def list_generations(
             result = []
             for gen in generations:
                 # Извлекаем error_message из generation_metadata
+                # Для старых генераций (до добавления error_message) будет None
                 error_msg = None
                 if gen.generation_metadata:
                     error_msg = gen.generation_metadata.get('error')
-                    # Логируем для отладки
-                    if error_msg and gen.status == 'failed':
-                        logger.info(f"[LIST] Генерация {gen.id} имеет ошибку: {error_msg[:100]}...")
+                    # Если error есть, но статус не failed - все равно возвращаем (на случай если статус не обновился)
+                    if error_msg:
+                        logger.info(f"[LIST] Генерация {gen.id} (статус: {gen.status}) имеет error_message: {error_msg[:100]}...")
+                elif gen.status == 'failed':
+                    # Для старых failed генераций без metadata устанавливаем None
+                    logger.info(f"[LIST] Генерация {gen.id} имеет статус 'failed', но нет error_message в metadata")
                 
                 result.append(ImageResponse(
                     id=gen.id,
@@ -458,7 +462,7 @@ async def list_generations(
                     result_url=gen.result_url,
                     status=gen.status,
                     created_at=gen.created_at,
-                    error_message=error_msg
+                    error_message=error_msg  # None для старых генераций без ошибок
                 ))
             
             # Логируем URL для отладки
