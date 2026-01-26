@@ -66,6 +66,16 @@ services:
     networks:
       - nano_banana_network
 
+  # Adminer - веб-интерфейс для PostgreSQL (опционально)
+  adminer:
+    image: adminer:latest
+    container_name: nano_banana_adminer
+    ports:
+      - "8080:8080"
+    networks:
+      - nano_banana_network
+    restart: unless-stopped
+
   # FastAPI приложение
   api:
     build: .

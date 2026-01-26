@@ -120,24 +120,23 @@ function processReferenceFile(file) {
 
 // Обновление превью референсных изображений
 function updateReferencePreview() {
-    const preview = document.getElementById('referencePreview');
     const dropZone = document.getElementById('referenceDropZone');
+    const dropZoneContent = dropZone ? dropZone.querySelector('.reference-drop-zone-content') : null;
     
-    if (!preview) return;
+    if (!dropZone || !dropZoneContent) return;
     
-    preview.innerHTML = '';
+    // Очищаем содержимое зоны
+    dropZoneContent.innerHTML = '';
     
-    // Скрываем/показываем зону drop в зависимости от количества референсов
-    if (dropZone) {
-        if (referenceImages.length >= 4) {
-            dropZone.style.display = 'none';
-        } else {
-            dropZone.style.display = 'block';
-        }
-    }
-    
-    // Отображаем референсы в порядке массива (первые элементы слева)
-    referenceImages.forEach((ref, index) => {
+    // Если есть референсы, показываем их внутри зоны
+    if (referenceImages.length > 0) {
+        // Создаем контейнер для референсов
+        const refsContainer = document.createElement('div');
+        refsContainer.className = 'd-flex flex-wrap gap-2 justify-content-center align-items-center';
+        refsContainer.style.minHeight = '120px';
+        
+        // Отображаем референсы в порядке массива (первые элементы слева)
+        referenceImages.forEach((ref, index) => {
         const container = document.createElement('div');
         container.className = 'position-relative d-inline-block me-2 mb-2 reference-item';
         container.style.width = '100px';
@@ -165,12 +164,12 @@ function updateReferencePreview() {
         container.addEventListener('dragover', (e) => {
             e.preventDefault();
             e.dataTransfer.dropEffect = 'move';
-            const afterElement = getDragAfterElement(preview, e.clientX);
+            const afterElement = getDragAfterElement(refsContainer, e.clientX);
             const dragging = document.querySelector('.dragging');
             if (afterElement == null) {
-                preview.appendChild(dragging);
+                refsContainer.appendChild(dragging);
             } else {
-                preview.insertBefore(dragging, afterElement);
+                refsContainer.insertBefore(dragging, afterElement);
             }
         });
         
@@ -246,46 +245,128 @@ function updateReferencePreview() {
             updateAspectRatioOptions();
         };
         
-        container.appendChild(img);
-        container.appendChild(label);
-        container.appendChild(removeBtn);
-        // Добавляем в конец (порядок соответствует массиву)
-        preview.appendChild(container);
-    });
-    
-    // Добавляем обработчики на сам контейнер preview для drop в пустое пространство
-    preview.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-    });
-    
-    preview.addEventListener('drop', (e) => {
-        e.preventDefault();
-        const draggedIndex = parseInt(e.dataTransfer.getData('text/plain'));
-        if (draggedIndex >= 0 && draggedIndex < referenceImages.length) {
-            // Если перетащили в конец, просто обновляем превью
-            const afterElement = getDragAfterElement(preview, e.clientX);
-            const dragging = document.querySelector('.dragging');
-            if (dragging) {
-                if (afterElement == null) {
-                    preview.appendChild(dragging);
-                } else {
-                    preview.insertBefore(dragging, afterElement);
-                }
-                
-                // Обновляем порядок в массиве
-                const newIndex = Array.from(preview.children).indexOf(dragging);
-                if (newIndex !== draggedIndex && newIndex >= 0) {
-                    const draggedItem = referenceImages[draggedIndex];
-                    referenceImages.splice(draggedIndex, 1);
-                    referenceImages.splice(newIndex, 0, draggedItem);
-                    console.log(`[REFERENCE] Референс ${draggedIndex + 1} перемещен на позицию ${newIndex + 1}`);
-                    updateReferencePreview();
-                    updateAspectRatioOptions();
-                }
+            container.appendChild(img);
+            container.appendChild(label);
+            container.appendChild(removeBtn);
+            // Добавляем в контейнер референсов
+            refsContainer.appendChild(container);
+        });
+        
+        // Добавляем контейнер с референсами в зону
+        dropZoneContent.appendChild(refsContainer);
+        
+        // Если не достигнут лимит, добавляем кнопки для добавления еще
+        if (referenceImages.length < 4) {
+            const addMoreContainer = document.createElement('div');
+            addMoreContainer.className = 'mt-3';
+            addMoreContainer.innerHTML = `
+                <p class="text-muted small mb-2">Добавить еще (${4 - referenceImages.length} свободно)</p>
+                <div class="d-flex gap-2 justify-content-center">
+                    <button type="button" class="btn btn-warning btn-sm" id="selectReferenceFilesBtn">
+                        <i class="fas fa-folder-open me-2"></i>Выбрать файл
+                    </button>
+                    <button type="button" class="btn btn-outline-light btn-sm" id="pasteFromClipboardBtn">
+                        <i class="fas fa-paste me-2"></i>Вставить из буфера
+                    </button>
+                </div>
+                <p class="text-muted small mt-2 mb-0">Нажмите Ctrl+V (или Cmd+V на Mac)</p>
+            `;
+            dropZoneContent.appendChild(addMoreContainer);
+            
+            // Перепривязываем обработчики кнопок
+            const selectBtn = addMoreContainer.querySelector('#selectReferenceFilesBtn');
+            const pasteBtn = addMoreContainer.querySelector('#pasteFromClipboardBtn');
+            const referenceImagesInput = document.getElementById('referenceImages');
+            
+            if (selectBtn && referenceImagesInput) {
+                selectBtn.addEventListener('click', () => {
+                    referenceImagesInput.click();
+                });
+            }
+            
+            if (pasteBtn) {
+                pasteBtn.addEventListener('click', async () => {
+                    await handlePasteFromClipboard();
+                });
             }
         }
-    });
+    } else {
+        // Если референсов нет, показываем стандартный интерфейс загрузки
+        dropZoneContent.innerHTML = `
+            <i class="fas fa-images mb-3" style="font-size: 3rem; color: rgba(102, 126, 234, 0.7);"></i>
+            <p class="text-light mb-2 fw-bold">Перетащите изображение сюда</p>
+            <p class="text-muted small mb-3">или нажмите на кнопку</p>
+            <div class="d-flex gap-2 justify-content-center">
+                <button type="button" class="btn btn-warning" id="selectReferenceFilesBtn">
+                    <i class="fas fa-folder-open me-2"></i>Выбрать файл
+                </button>
+                <button type="button" class="btn btn-outline-light" id="pasteFromClipboardBtn">
+                    <i class="fas fa-paste me-2"></i>Вставить из буфера
+                </button>
+            </div>
+            <p class="text-muted small mt-2 mb-0">Нажмите Ctrl+V (или Cmd+V на Mac)</p>
+        `;
+        
+        // Перепривязываем обработчики кнопок
+        const selectBtn = dropZoneContent.querySelector('#selectReferenceFilesBtn');
+        const pasteBtn = dropZoneContent.querySelector('#pasteFromClipboardBtn');
+        const referenceImagesInput = document.getElementById('referenceImages');
+        
+        if (selectBtn && referenceImagesInput) {
+            selectBtn.addEventListener('click', () => {
+                referenceImagesInput.click();
+            });
+        }
+        
+        if (pasteBtn) {
+            pasteBtn.addEventListener('click', async () => {
+                await handlePasteFromClipboard();
+            });
+        }
+    }
+    
+    // Скрываем зону только если достигнут лимит
+    if (referenceImages.length >= 4) {
+        dropZone.style.display = 'none';
+    } else {
+        dropZone.style.display = 'block';
+    }
+    
+    // Обработчики для drop-зоны (если перетащили между референсами)
+    const refsContainer = dropZoneContent.querySelector('.d-flex.flex-wrap');
+    if (refsContainer) {
+        refsContainer.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+        });
+        
+        refsContainer.addEventListener('drop', (e) => {
+            e.preventDefault();
+            const draggedIndex = parseInt(e.dataTransfer.getData('text/plain'));
+            if (draggedIndex >= 0 && draggedIndex < referenceImages.length) {
+                const afterElement = getDragAfterElement(refsContainer, e.clientX);
+                const dragging = document.querySelector('.dragging');
+                if (dragging) {
+                    if (afterElement == null) {
+                        refsContainer.appendChild(dragging);
+                    } else {
+                        refsContainer.insertBefore(dragging, afterElement);
+                    }
+                    
+                    // Обновляем порядок в массиве
+                    const newIndex = Array.from(refsContainer.children).indexOf(dragging);
+                    if (newIndex !== draggedIndex && newIndex >= 0) {
+                        const draggedItem = referenceImages[draggedIndex];
+                        referenceImages.splice(draggedIndex, 1);
+                        referenceImages.splice(newIndex, 0, draggedItem);
+                        console.log(`[REFERENCE] Референс ${draggedIndex + 1} перемещен на позицию ${newIndex + 1}`);
+                        updateReferencePreview();
+                        updateAspectRatioOptions();
+                    }
+                }
+            }
+        });
+    }
 }
 
 // Функция для определения позиции при drag and drop
