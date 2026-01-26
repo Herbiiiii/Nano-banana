@@ -1476,14 +1476,15 @@ async function handleApiKeySave(e) {
         showToast('Ошибка сохранения ключа. Проверьте настройки браузера.', 'error');
     }
     
+    // НЕ очищаем поле ввода - пользователь должен видеть что ключ сохранен
+    // document.getElementById('apiKeyInput').value = '';
+    
     // Закрываем модальное окно
     const modal = bootstrap.Modal.getInstance(document.getElementById('apiKeyModal'));
     if (modal) {
         modal.hide();
     }
     
-    // Очищаем поле ввода
-    document.getElementById('apiKeyInput').value = '';
     checkApiKeyStatus();
 }
 

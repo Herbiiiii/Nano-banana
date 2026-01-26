@@ -209,6 +209,9 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                 error_message = result.get('error', 'Неизвестная ошибка')
                 generation.generation_metadata['error'] = error_message
                 
+                logger.error(f"[GENERATION] Генерация {generation_id} завершена с ошибкой. Сохраняем error_message: {error_message[:200]}...")
+                logger.info(f"[GENERATION] generation_metadata перед commit: {generation.generation_metadata}")
+                
                 # Сохраняем ошибку в файл
                 from app.services.ErrorLogger import save_error_to_file
                 error_data = {
@@ -223,6 +226,12 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
             
             session.commit()
             logger.info(f"[GENERATION] Генерация {generation_id} завершена со статусом {generation.status}")
+            
+            # Проверяем что error_message сохранился
+            if generation.status == 'failed':
+                session.refresh(generation)
+                saved_error = generation.generation_metadata.get('error') if generation.generation_metadata else None
+                logger.info(f"[GENERATION] Проверка сохранения error_message для генерации {generation_id}: {saved_error[:200] if saved_error else 'НЕ СОХРАНЕНО!'}...")
             
     except Exception as e:
         logger.error(f"[GENERATION] Ошибка обработки генерации {generation_id}: {e}", exc_info=True)
@@ -425,6 +434,16 @@ async def list_generations(
             # Получаем общее количество генераций пользователя
             total_count = session.query(Generation).filter(Generation.user_id == user.user_id).count()
             
+            # Получаем сводку по всем пользователям (только раз в 10 запросов для уменьшения логов)
+            import random
+            if random.randint(1, 10) == 1:  # 10% вероятность логирования сводки
+                all_users = session.query(User).all()
+                user_summary = []
+                for u in all_users:
+                    user_gen_count = session.query(Generation).filter(Generation.user_id == u.id).count()
+                    user_summary.append(f"user_{u.id}({u.username}): {user_gen_count} ген.")
+                logger.info(f"[LIST] Сводка по пользователям: {', '.join(user_summary)}")
+            
             # Получаем все генерации пользователя
             all_generations = session.query(Generation).filter(
                 Generation.user_id == user.user_id
@@ -444,12 +463,7 @@ async def list_generations(
                 error_msg = None
                 if gen.generation_metadata:
                     error_msg = gen.generation_metadata.get('error')
-                    # Если error есть, но статус не failed - все равно возвращаем (на случай если статус не обновился)
-                    if error_msg:
-                        logger.info(f"[LIST] Генерация {gen.id} (статус: {gen.status}) имеет error_message: {error_msg[:100]}...")
-                elif gen.status == 'failed':
-                    # Для старых failed генераций без metadata устанавливаем None
-                    logger.info(f"[LIST] Генерация {gen.id} имеет статус 'failed', но нет error_message в metadata")
+                # Убрали избыточное логирование каждой генерации
                 
                 result.append(ImageResponse(
                     id=gen.id,
@@ -465,10 +479,12 @@ async def list_generations(
                     error_message=error_msg  # None для старых генераций без ошибок
                 ))
             
-            # Логируем URL для отладки
-            for resp in result:
-                if resp.result_url:
-                    logger.info(f"[LIST] Генерация {resp.id} (статус: {resp.status}): result_url={resp.result_url}")
+            # Логируем только сводку, а не каждую генерацию
+            completed_count = sum(1 for resp in result if resp.status == 'completed')
+            failed_count = sum(1 for resp in result if resp.status == 'failed')
+            running_count = sum(1 for resp in result if resp.status == 'running')
+            pending_count = sum(1 for resp in result if resp.status == 'pending')
+            logger.info(f"[LIST] Сводка для пользователя {user.user_id}: всего={len(result)}, завершено={completed_count}, ошибок={failed_count}, выполняется={running_count}, в очереди={pending_count}")
             
             # Возвращаем результат с метаданными
             from fastapi.responses import JSONResponse
@@ -485,9 +501,7 @@ async def list_generations(
                     gen_dict['updated_at'] = gen_dict['updated_at'].isoformat() if hasattr(gen_dict['updated_at'], 'isoformat') else str(gen_dict['updated_at'])
                 if 'completed_at' in gen_dict and gen_dict.get('completed_at'):
                     gen_dict['completed_at'] = gen_dict['completed_at'].isoformat() if hasattr(gen_dict['completed_at'], 'isoformat') else str(gen_dict['completed_at'])
-                # Логируем error_message для отладки
-                if gen_dict.get('error_message') and gen_dict.get('status') == 'failed':
-                    logger.info(f"[LIST] Генерация {gen_dict['id']} в JSON имеет error_message: {gen_dict['error_message'][:100]}...")
+                # Убрали избыточное логирование error_message
                 generations_data.append(gen_dict)
             
             return JSONResponse(content={
