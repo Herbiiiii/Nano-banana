@@ -245,6 +245,31 @@ async def generate_image(
             )
         api_key = get_user_replicate_key(user.user_id, request.api_key)
         
+        # Проверяем лимиты активных генераций по API ключу
+        # Создаем хеш API ключа для группировки (первые 8 символов для идентификации)
+        api_key_hash = api_key[:8] if len(api_key) >= 8 else api_key
+        with db_service.get_session() as session:
+            # Подсчитываем активные генерации для этого API ключа
+            # Используем generation_metadata для хранения хеша ключа (безопасно, не храним сам ключ)
+            active_generations = session.query(Generation).filter(
+                Generation.user_id == user.user_id,
+                Generation.status.in_(["pending", "running"])
+            ).all()
+            
+            # Фильтруем по API ключу через metadata (если храним хеш)
+            # Или просто считаем все активные генерации пользователя
+            # Для простоты считаем все активные генерации пользователя
+            active_count = len(active_generations)
+            max_concurrent = settings.MAX_CONCURRENT_GENERATIONS
+            
+            if active_count >= max_concurrent:
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Достигнут лимит одновременных генераций ({max_concurrent}). Дождитесь завершения текущих генераций."
+                )
+            
+            logger.info(f"[GENERATION] Активных генераций для пользователя {user.user_id}: {active_count}/{max_concurrent}")
+        
         # Создаем запись в БД
         with db_service.get_session() as session:
             # Сохраняем URL референсных изображений для последующего редактирования
@@ -433,7 +458,8 @@ async def get_generation_full(
             "seed": generation.seed,
             "reference_images": generation.generation_metadata.get("reference_image_urls", []) if generation.generation_metadata else [],
             "result_url": generation.result_url,
-            "status": generation.status
+            "status": generation.status,
+            "error_message": generation.generation_metadata.get('error') if generation.generation_metadata else None
         }
 
 @router.delete("/{generation_id}")

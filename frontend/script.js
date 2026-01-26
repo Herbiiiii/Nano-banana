@@ -120,7 +120,20 @@ function processReferenceFile(file) {
 // Обновление превью референсных изображений
 function updateReferencePreview() {
     const preview = document.getElementById('referencePreview');
+    const dropZone = document.getElementById('referenceDropZone');
+    
+    if (!preview) return;
+    
     preview.innerHTML = '';
+    
+    // Скрываем/показываем зону drop в зависимости от количества референсов
+    if (dropZone) {
+        if (referenceImages.length >= 4) {
+            dropZone.style.display = 'none';
+        } else {
+            dropZone.style.display = 'block';
+        }
+    }
     
     referenceImages.forEach((ref, index) => {
         const container = document.createElement('div');
@@ -692,81 +705,189 @@ function setupEventListeners() {
     });
 
     // Референсные изображения - добавляем, а не заменяем
-    document.getElementById('referenceImages').addEventListener('change', (e) => {
-        const newFiles = Array.from(e.target.files);
-        const remainingSlots = 4 - referenceImages.length;
-        
-        if (remainingSlots > 0) {
-            const filesToAdd = newFiles.slice(0, remainingSlots);
-            filesToAdd.forEach(file => {
-                processReferenceFile(file);
-            });
-        }
-        
-        // Очищаем input чтобы можно было выбрать тот же файл снова
-        e.target.value = '';
-    });
-    
-    // Обработка вставки из буфера обмена
+    const referenceImagesInput = document.getElementById('referenceImages');
+    const referenceDropZone = document.getElementById('referenceDropZone');
+    const selectReferenceFilesBtn = document.getElementById('selectReferenceFilesBtn');
+    const pasteFromClipboardBtn = document.getElementById('pasteFromClipboardBtn');
     const referenceSection = document.getElementById('referenceImagesSection');
     const referencePreview = document.getElementById('referencePreview');
     
-    // Обработчик paste на секции референсов
-    if (referenceSection) {
-        referenceSection.addEventListener('paste', async (e) => {
-            // Проверяем что секция видима
-            if (referenceSection.style.display === 'none') return;
-            
-            const remainingSlots = 4 - referenceImages.length;
-            if (remainingSlots <= 0) {
-                showToast('Достигнут лимит референсов (4)', 'warning');
-                return;
-            }
-            
-            const items = e.clipboardData.items;
-            const imageItems = Array.from(items).filter(item => item.type.indexOf('image') !== -1);
-            
-            if (imageItems.length === 0) {
-                showToast('В буфере обмена нет изображений', 'info');
-                return;
-            }
-            
-            for (let i = 0; i < Math.min(imageItems.length, remainingSlots); i++) {
-                const item = imageItems[i];
-                const file = item.getAsFile();
-                if (file) {
-                    processReferenceFile(file);
-                }
-            }
-            
-            e.preventDefault();
+    // Кнопка выбора файлов
+    if (selectReferenceFilesBtn && referenceImagesInput) {
+        selectReferenceFilesBtn.addEventListener('click', () => {
+            referenceImagesInput.click();
         });
     }
     
-    // Обработчик paste на preview (на случай если фокус там)
-    if (referencePreview) {
-        referencePreview.addEventListener('paste', async (e) => {
+    // Кнопка вставки из буфера
+    if (pasteFromClipboardBtn) {
+        pasteFromClipboardBtn.addEventListener('click', async () => {
+            await handlePasteFromClipboard();
+        });
+    }
+    
+    // Обработчик выбора файлов
+    if (referenceImagesInput) {
+        referenceImagesInput.addEventListener('change', (e) => {
+            const newFiles = Array.from(e.target.files);
             const remainingSlots = 4 - referenceImages.length;
+            
+            if (remainingSlots > 0) {
+                const filesToAdd = newFiles.slice(0, remainingSlots);
+                filesToAdd.forEach(file => {
+                    processReferenceFile(file);
+                });
+            }
+            
+            // Очищаем input чтобы можно было выбрать тот же файл снова
+            e.target.value = '';
+        });
+    }
+    
+    // Drag and Drop для зоны
+    if (referenceDropZone) {
+        // Предотвращаем стандартное поведение браузера
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            referenceDropZone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            });
+        });
+        
+        // Визуальная обратная связь при drag
+        referenceDropZone.addEventListener('dragenter', () => {
+            referenceDropZone.style.borderColor = 'rgba(102, 126, 234, 1)';
+            referenceDropZone.style.background = 'rgba(102, 126, 234, 0.15)';
+        });
+        
+        referenceDropZone.addEventListener('dragleave', () => {
+            referenceDropZone.style.borderColor = 'rgba(102, 126, 234, 0.5)';
+            referenceDropZone.style.background = 'rgba(102, 126, 234, 0.05)';
+        });
+        
+        // Обработка drop
+        referenceDropZone.addEventListener('drop', (e) => {
+            referenceDropZone.style.borderColor = 'rgba(102, 126, 234, 0.5)';
+            referenceDropZone.style.background = 'rgba(102, 126, 234, 0.05)';
+            
+            const files = Array.from(e.dataTransfer.files).filter(file => file.type.startsWith('image/'));
+            const remainingSlots = 4 - referenceImages.length;
+            
+            if (files.length === 0) {
+                showToast('Перетащите изображение', 'warning');
+                return;
+            }
+            
             if (remainingSlots <= 0) {
                 showToast('Достигнут лимит референсов (4)', 'warning');
                 return;
             }
             
-            const items = e.clipboardData.items;
-            const imageItems = Array.from(items).filter(item => item.type.indexOf('image') !== -1);
+            files.slice(0, remainingSlots).forEach(file => {
+                processReferenceFile(file);
+            });
+        });
+    }
+    
+    // Глобальный обработчик Ctrl+V / Cmd+V (работает независимо от языка клавиатуры)
+    document.addEventListener('keydown', async (e) => {
+        // Проверяем Ctrl+V (Windows/Linux) или Cmd+V (Mac)
+        // Используем event.code для работы с любым языком клавиатуры
+        const isCtrlV = (e.ctrlKey || e.metaKey) && (e.code === 'KeyV' || e.keyCode === 86);
+        
+        if (isCtrlV && referenceSection && referenceSection.style.display !== 'none') {
+            // Проверяем что фокус не в текстовом поле (чтобы не мешать обычной вставке текста)
+            const activeElement = document.activeElement;
+            const isTextInput = activeElement && (
+                activeElement.tagName === 'INPUT' || 
+                activeElement.tagName === 'TEXTAREA' ||
+                activeElement.isContentEditable
+            );
             
-            if (imageItems.length === 0) return;
+            if (!isTextInput) {
+                e.preventDefault();
+                await handlePasteFromClipboard();
+            }
+        }
+    });
+    
+    // Обработчик paste события (для случаев когда фокус на зоне)
+    if (referenceDropZone) {
+        referenceDropZone.addEventListener('paste', async (e) => {
+            e.preventDefault();
+            await handlePasteFromClipboard(e);
+        });
+    }
+    
+    // Обработчик paste на preview
+    if (referencePreview) {
+        referencePreview.addEventListener('paste', async (e) => {
+            e.preventDefault();
+            await handlePasteFromClipboard(e);
+        });
+    }
+    
+    // Функция обработки вставки из буфера
+    async function handlePasteFromClipboard(e = null) {
+        if (referenceSection && referenceSection.style.display === 'none') return;
+        
+        const remainingSlots = 4 - referenceImages.length;
+        if (remainingSlots <= 0) {
+            showToast('Достигнут лимит референсов (4)', 'warning');
+            return;
+        }
+        
+        let items = null;
+        if (e && e.clipboardData) {
+            items = e.clipboardData.items;
+        } else {
+            // Пробуем получить из буфера обмена через Clipboard API
+            try {
+                const clipboardItems = await navigator.clipboard.read();
+                items = clipboardItems;
+            } catch (err) {
+                console.warn('[PASTE] Clipboard API недоступен, используем событие paste:', err);
+                // Если Clipboard API недоступен, ждем события paste
+                showToast('Нажмите Ctrl+V когда секция референсов видна', 'info');
+                return;
+            }
+        }
+        
+        if (!items || items.length === 0) {
+            showToast('В буфере обмена нет изображений', 'info');
+            return;
+        }
+        
+        const imageItems = Array.from(items).filter(item => {
+            if (item.type) {
+                return item.type.indexOf('image') !== -1;
+            } else if (item.types) {
+                return item.types.some(type => type.indexOf('image') !== -1);
+            }
+            return false;
+        });
+        
+        if (imageItems.length === 0) {
+            showToast('В буфере обмена нет изображений', 'info');
+            return;
+        }
+        
+        for (let i = 0; i < Math.min(imageItems.length, remainingSlots); i++) {
+            const item = imageItems[i];
+            let file = null;
             
-            for (let i = 0; i < Math.min(imageItems.length, remainingSlots); i++) {
-                const item = imageItems[i];
-                const file = item.getAsFile();
-                if (file) {
-                    processReferenceFile(file);
-                }
+            if (item.getAsFile) {
+                file = item.getAsFile();
+            } else if (item.getType) {
+                // Для Clipboard API
+                const blob = await item.getType('image/png');
+                file = new File([blob], `pasted-image-${Date.now()}.png`, { type: 'image/png' });
             }
             
-            e.preventDefault();
-        });
+            if (file) {
+                processReferenceFile(file);
+            }
+        }
     }
     
 
@@ -912,7 +1033,16 @@ async function handleGenerate(e) {
 
         if (!response.ok) {
             const error = await response.json();
-            throw new Error(error.detail || 'Ошибка генерации');
+            const errorMessage = error.detail || 'Ошибка генерации';
+            
+            // Специальная обработка ошибки лимита
+            if (response.status === 429) {
+                showToast(`Лимит: ${errorMessage}`, 'warning');
+            } else {
+                showToast(`Ошибка: ${errorMessage}`, 'error');
+            }
+            
+            throw new Error(errorMessage);
         }
 
         const result = await response.json();
@@ -1382,7 +1512,7 @@ async function loadGallery() {
         grid.innerHTML = sortedGenerations.map(gen => `
             <div class="col" data-generation-id="${gen.id}">
                 <div class="card h-100 generation-card" style="border-radius: 12px; overflow: hidden;">
-                    <div class="position-relative image-container" data-gen-id="${gen.id}" style="height: 350px; overflow: hidden !important; background: #1a1a2e; cursor: ${gen.status === 'completed' && gen.result_url ? 'pointer' : 'default'}; border-radius: 0 0 12px 12px !important; position: relative;" ${gen.status === 'completed' && gen.result_url ? `onclick="(function(e) { if (!e.target.closest('.info-btn') && !e.target.closest('.btn-edit') && !e.target.closest('.btn-delete') && !e.target.closest('.btn-download') && !e.target.closest('.prompt-and-buttons-overlay')) { openFullscreenImage('${gen.result_url.replace(/'/g, "\\'")}', '${(gen.prompt || '').replace(/'/g, "\\'").replace(/"/g, '&quot;')}'); } })(event)"` : ''}>
+                    <div class="position-relative image-container" data-gen-id="${gen.id}" data-image-url="${gen.status === 'completed' && gen.result_url ? gen.result_url.replace(/'/g, "\\'") : ''}" data-prompt="${gen.status === 'completed' && gen.result_url ? (gen.prompt || '').replace(/'/g, "\\'").replace(/"/g, '&quot;') : ''}" style="height: 350px; overflow: hidden !important; background: #1a1a2e; cursor: ${gen.status === 'completed' && gen.result_url ? 'pointer' : 'default'}; border-radius: 0 0 12px 12px !important; position: relative;">
                         ${gen.status === 'completed' && gen.result_url ? 
                             `<img src="${gen.result_url}" class="card-img-top generation-image" data-gen-id="${gen.id}" style="height: 350px; width: 100%; object-fit: cover; position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: 1; display: block; border-radius: 0 0 12px 12px;" alt="Generated image" 
                                 onerror="(function(img, genId) { console.error('[IMAGE] Ошибка загрузки изображения для генерации', genId); console.error('[IMAGE] URL:', img.src); img.style.display='none'; const container = img.closest('.image-container'); const errorDiv = container ? container.querySelector('.image-error') : null; if (errorDiv) { errorDiv.style.setProperty('display', 'flex', 'important'); errorDiv.style.zIndex='2'; } })(this, ${gen.id});" 
@@ -1392,7 +1522,7 @@ async function loadGallery() {
                                     `<div class="text-center">
                                         <i class="fas fa-exclamation-triangle text-danger" style="font-size: 3rem;"></i>
                                         <p class="mt-3 mb-0 text-light fw-bold">Ошибка генерации</p>
-                                        <p class="mt-2 mb-0 text-danger small">${gen.error_message || 'Не удалось сгенерировать изображение'}</p>
+                                        <p class="mt-2 mb-0 text-danger small">${(gen.error_message || 'Не удалось сгенерировать изображение').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')}</p>
                                     </div>` :
                                     `<div class="text-center">
                                         <div class="spinner-border text-warning" role="status" style="width: 3rem; height: 3rem;">
@@ -1414,7 +1544,7 @@ async function loadGallery() {
                             <div style="display: flex; align-items: center; gap: 0.25rem; pointer-events: none;">
                                 <button class="btn btn-sm generation-status-badge" disabled style="opacity: 1 !important; background: ${gen.status === 'completed' ? 'linear-gradient(135deg, rgba(74, 85, 104, 0.7) 0%, rgba(72, 187, 120, 0.5) 100%)' : gen.status === 'failed' ? 'linear-gradient(135deg, rgba(74, 85, 104, 0.7) 0%, rgba(229, 62, 62, 0.5) 100%)' : 'linear-gradient(135deg, rgba(74, 85, 104, 0.7) 0%, rgba(102, 126, 234, 0.5) 100%)'} !important; border: 1px solid ${gen.status === 'completed' ? 'rgba(72, 187, 120, 0.6)' : gen.status === 'failed' ? 'rgba(229, 62, 62, 0.6)' : 'rgba(102, 126, 234, 0.6)'} !important; padding: 0.25rem 0.5rem; color: #ffffff !important; font-weight: 700; cursor: default; pointer-events: none; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);">${gen.status === 'completed' ? 'Завершено' : gen.status === 'running' ? 'Генерируется' : gen.status === 'pending' ? 'В очереди' : 'Ошибка'}</button>
                                 ${(gen.status === 'completed' || gen.status === 'failed') ? 
-                                    `<button class="btn btn-sm btn-link text-white p-1 info-btn" onclick="event.stopPropagation(); event.preventDefault(); showGenerationParams(${gen.id}, '${(gen.prompt || '').replace(/'/g, "\\'").replace(/"/g, '&quot;')}', '${gen.resolution || ''}', '${gen.aspect_ratio || ''}', '${(gen.error_message || '').replace(/'/g, "\\'").replace(/"/g, '&quot;').replace(/\n/g, ' ')}')" title="Параметры генерации" style="opacity: 0.9; pointer-events: auto !important; cursor: pointer; z-index: 10; position: relative;">
+                                    `<button class="btn btn-sm btn-link text-white p-1 info-btn" data-gen-id="${gen.id}" title="Параметры генерации" style="opacity: 0.9; pointer-events: auto !important; cursor: pointer; z-index: 10; position: relative;">
                                         <i class="fas fa-info-circle" style="font-size: 0.75rem;"></i>
                                     </button>` : ''
                                 }
@@ -1445,6 +1575,65 @@ async function loadGallery() {
         `).join('');
         
         console.log('[GALLERY] Галерея обновлена, отображено карточек:', sortedGenerations.length);
+        
+        // Добавляем обработчики событий для карточек после рендеринга
+        setTimeout(() => {
+            // Обработчики для открытия фуллскрина
+            document.querySelectorAll('.image-container[data-image-url]').forEach(container => {
+                const imageUrl = container.getAttribute('data-image-url');
+                const prompt = container.getAttribute('data-prompt');
+                
+                if (imageUrl) {
+                    container.addEventListener('click', (e) => {
+                        // Проверяем что клик не на кнопках
+                        if (!e.target.closest('.info-btn') && 
+                            !e.target.closest('.btn-edit') && 
+                            !e.target.closest('.btn-delete') && 
+                            !e.target.closest('.btn-download') && 
+                            !e.target.closest('.prompt-and-buttons-overlay') &&
+                            !e.target.closest('.generation-status-badge')) {
+                            openFullscreenImage(imageUrl, prompt);
+                        }
+                    });
+                }
+            });
+            
+            // Обработчики для кнопки инфо
+            document.querySelectorAll('.info-btn').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    
+                    const genId = parseInt(btn.getAttribute('data-gen-id'));
+                    if (!genId) return;
+                    
+                    try {
+                        // Загружаем полные данные генерации
+                        const response = await fetch(`${API_URL}/images/${genId}`, {
+                            headers: {
+                                'Authorization': `Bearer ${authToken}`
+                            }
+                        });
+                        
+                        if (response.ok) {
+                            const gen = await response.json();
+                            showGenerationParams(
+                                gen.id,
+                                gen.prompt || '',
+                                gen.resolution || '',
+                                gen.aspect_ratio || '',
+                                gen.error_message || ''
+                            );
+                        } else {
+                            throw new Error('Ошибка загрузки данных');
+                        }
+                    } catch (error) {
+                        console.error('[INFO] Ошибка загрузки данных генерации:', error);
+                        showToast('Ошибка загрузки данных генерации', 'error');
+                    }
+                });
+            });
+        }, 100);
         
         // Обновляем счетчик генераций в шапке и информацию о лимитах
         updateGalleryStats(sortedGenerations, meta);
