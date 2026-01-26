@@ -246,8 +246,12 @@ function updateReferencePreview() {
         label.style.border = '1px solid rgba(102, 126, 234, 0.6)';
         label.style.fontWeight = '700';
         label.style.zIndex = '6';
-        label.textContent = `Реф${index + 1}`;
-        label.setAttribute('data-ref-index', index);
+        // ВАЖНО: Используем индекс из массива, а не из forEach
+        // Это гарантирует что "Реф1" всегда будет у первого элемента массива
+        const actualIndex = referenceImages.findIndex(r => r.id === ref.id);
+        const displayIndex = actualIndex >= 0 ? actualIndex : index;
+        label.textContent = `Реф${displayIndex + 1}`;
+        label.setAttribute('data-ref-index', displayIndex);
         
         // Кнопка скачивания референса (в правом верхнем углу, стиль как "завершено")
         const downloadBtn = document.createElement('button');
@@ -620,6 +624,24 @@ document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
     setupAspectRatioVisuals();
     setupCustomDropdown();
+    
+    // Проверяем API ключ при загрузке
+    const apiKey = getApiKey();
+    const storage = getStorage();
+    const storageType = storage === localStorage ? 'localStorage' : (storage === sessionStorage ? 'sessionStorage' : 'недоступно');
+    console.log('[INIT] API ключ при загрузке:', {
+        has_key: !!apiKey,
+        key_length: apiKey ? apiKey.length : 0,
+        storage_type: storageType,
+        storage_available: !!storage
+    });
+    
+    // Если ключ есть, логируем что он сохранен
+    if (apiKey) {
+        console.log('[INIT] API ключ найден в', storageType);
+    } else {
+        console.warn('[INIT] API ключ не найден. Пользователь должен ввести ключ в настройках.');
+    }
     
     // Обновление галереи каждые 5 секунд (только если есть активные генерации)
     setInterval(async () => {
@@ -1780,17 +1802,29 @@ async function loadGallery() {
                                 error_message_full: gen.error_message || 'нет'
                             });
                             
-                            // Убеждаемся что error_message передается
-                            const errorMsg = gen.error_message || null; // null вместо пустой строки для старых генераций
+                            // Убеждаемся что error_message передается правильно
+                            // Может быть строкой, объектом, null или undefined
+                            let errorMsg = null;
+                            if (gen.error_message) {
+                                if (typeof gen.error_message === 'string') {
+                                    errorMsg = gen.error_message;
+                                } else if (typeof gen.error_message === 'object') {
+                                    // Если это объект, конвертируем в строку
+                                    errorMsg = JSON.stringify(gen.error_message, null, 2);
+                                } else {
+                                    errorMsg = String(gen.error_message);
+                                }
+                            }
+                            
                             console.log('[INFO] Получены данные генерации для модального окна:', {
                                 id: gen.id,
                                 status: gen.status,
                                 has_error_message: !!gen.error_message,
                                 error_message_type: typeof gen.error_message,
-                                error_message_value: gen.error_message ? gen.error_message.substring(0, 100) + '...' : 'null/пусто',
-                                error_message_full_length: gen.error_message ? gen.error_message.length : 0
+                                error_message_value: errorMsg ? errorMsg.substring(0, 100) + '...' : 'null/пусто',
+                                error_message_full_length: errorMsg ? errorMsg.length : 0
                             });
-                            console.log('[INFO] Передаем error_message в showGenerationParams:', errorMsg ? errorMsg.substring(0, 50) + '...' : (errorMsg === null ? 'null' : 'пустая строка'));
+                            console.log('[INFO] Передаем error_message в showGenerationParams:', errorMsg ? errorMsg.substring(0, 50) + '...' : 'null');
                             
                             showGenerationParams(
                                 gen.id,
@@ -2295,8 +2329,20 @@ function showGenerationParams(id, prompt, resolution, aspectRatio, errorMessage)
     const safePrompt = (prompt || '').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     const safeResolution = (resolution || 'Не указано').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const safeAspectRatio = (aspectRatio || 'Не указано').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    // Убеждаемся что errorMessage обрабатывается правильно
-    const safeErrorMessage = (errorMessage && errorMessage.trim()) ? errorMessage.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;') : '';
+    
+    // ВАЖНО: Правильно обрабатываем errorMessage (может быть строкой, объектом, null или undefined)
+    let errorMessageStr = '';
+    if (errorMessage) {
+        if (typeof errorMessage === 'string') {
+            errorMessageStr = errorMessage.trim();
+        } else if (typeof errorMessage === 'object') {
+            // Если это объект, пытаемся извлечь строку
+            errorMessageStr = JSON.stringify(errorMessage);
+        } else {
+            errorMessageStr = String(errorMessage);
+        }
+    }
+    const safeErrorMessage = errorMessageStr ? errorMessageStr.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;') : '';
     
     console.log('[SHOW_PARAMS] После обработки safeErrorMessage:', {
         has_safeErrorMessage: !!safeErrorMessage,
