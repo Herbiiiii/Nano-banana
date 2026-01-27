@@ -74,6 +74,9 @@ services:
       - "8080:8080"
     networks:
       - nano_banana_network
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
 
   # FastAPI приложение
