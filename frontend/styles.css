@@ -138,19 +138,27 @@ body {
 }
 
 .btn-warning {
-    background: linear-gradient(135deg, var(--metal-gray) 0%, var(--metal-gray-dark) 100%);
+    background: transparent !important;
     border: 2px solid var(--border-color);
     color: var(--text-primary);
     font-weight: 600;
     transition: all 0.3s;
 }
 
-.btn-warning:hover {
-    background: linear-gradient(135deg, var(--metal-gray-light) 0%, var(--metal-gray) 100%);
+.btn-warning:hover,
+.btn-warning:focus {
+    background: linear-gradient(135deg, var(--metal-gray) 0%, var(--metal-gray-dark) 100%) !important;
     border-color: var(--border-hover);
     color: var(--text-primary);
     transform: translateY(-2px);
     box-shadow: 0 4px 12px var(--shadow);
+}
+
+.btn-warning:active,
+.btn-warning.active {
+    background: linear-gradient(135deg, var(--metal-gray-light) 0%, var(--metal-gray) 100%) !important;
+    border-color: var(--border-hover);
+    color: var(--text-primary);
 }
 
 .btn-danger {
@@ -266,6 +274,37 @@ body {
 
 .img-thumbnail {
     border-radius: 8px;
+    background-color: transparent;
+    object-fit: cover;
+}
+
+/* Стили для референсных изображений */
+.reference-item img {
+    width: 100px;
+    height: 100px;
+    object-fit: cover;
+    border-radius: 8px;
+    display: block;
+    background-color: transparent !important;
+}
+
+.reference-item {
+    background-color: transparent !important;
+}
+
+/* Убираем серый фон у контейнеров референсов */
+#referencePreview .reference-item,
+.reference-drop-zone-content .reference-item,
+.reference-item {
+    background-color: transparent !important;
+    background: transparent !important;
+}
+
+/* Убираем серый фон у изображений в референсах */
+.reference-item .img-thumbnail,
+.reference-item img {
+    background-color: transparent !important;
+    background: transparent !important;
 }
 
 #imageGrid .card {

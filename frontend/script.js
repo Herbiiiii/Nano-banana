@@ -169,6 +169,7 @@ function updateReferencePreview() {
         container.style.width = '100px';
         container.draggable = true;
         container.dataset.index = index;
+        container.dataset.refId = ref.id; // Сохраняем ID для идентификации
         container.style.cursor = 'move';
         
         // Drag and Drop обработчики
@@ -176,6 +177,7 @@ function updateReferencePreview() {
             e.dataTransfer.effectAllowed = 'move';
             e.dataTransfer.setData('text/html', container.outerHTML);
             e.dataTransfer.setData('text/plain', index.toString());
+            e.dataTransfer.setData('ref-id', ref.id); // Сохраняем ID референса
             container.classList.add('dragging');
             e.dataTransfer.setDragImage(container, 50, 50);
         });
@@ -217,18 +219,44 @@ function updateReferencePreview() {
             container.classList.remove('drag-over');
             
             const draggedIndex = parseInt(e.dataTransfer.getData('text/plain'));
+            const draggedRefId = e.dataTransfer.getData('ref-id');
             const targetIndex = parseInt(container.dataset.index);
             
-            console.log('[REFERENCE] Drop event:', { draggedIndex, targetIndex, arrayLength: referenceImages.length });
+            console.log('[REFERENCE] Drop event:', { draggedIndex, draggedRefId, targetIndex, arrayLength: referenceImages.length });
             
-            if (!isNaN(draggedIndex) && !isNaN(targetIndex) && draggedIndex !== targetIndex && 
-                draggedIndex >= 0 && draggedIndex < referenceImages.length &&
-                targetIndex >= 0 && targetIndex < referenceImages.length) {
-                
-                // Создаем новый массив для безопасности
-                const newArray = [...referenceImages];
-                const draggedItem = newArray[draggedIndex];
-                
+            // Проверяем валидность индексов
+            if (isNaN(draggedIndex) || isNaN(targetIndex) || 
+                draggedIndex < 0 || draggedIndex >= referenceImages.length ||
+                targetIndex < 0 || targetIndex >= referenceImages.length) {
+                console.warn('[REFERENCE] Некорректные индексы, обновляем превью');
+                updateReferencePreview();
+                return;
+            }
+            
+            // Если элемент не перемещается, просто обновляем превью
+            if (draggedIndex === targetIndex) {
+                updateReferencePreview();
+                return;
+            }
+            
+            // Создаем новый массив для безопасности
+            const newArray = [...referenceImages];
+            const draggedItem = newArray[draggedIndex];
+            
+            // Проверяем, что элемент найден по ID (дополнительная проверка)
+            if (draggedRefId && draggedItem.id !== draggedRefId) {
+                // Ищем по ID если индекс не совпадает
+                const foundIndex = newArray.findIndex(r => r.id === draggedRefId);
+                if (foundIndex >= 0) {
+                    const correctItem = newArray[foundIndex];
+                    newArray.splice(foundIndex, 1);
+                    newArray.splice(targetIndex, 0, correctItem);
+                } else {
+                    console.warn('[REFERENCE] Референс не найден по ID, используем индекс');
+                    newArray.splice(draggedIndex, 1);
+                    newArray.splice(targetIndex, 0, draggedItem);
+                }
+            } else {
                 // Удаляем элемент из старой позиции
                 newArray.splice(draggedIndex, 1);
                 
@@ -240,17 +268,17 @@ function updateReferencePreview() {
                 
                 // Вставляем в новую позицию
                 newArray.splice(newIndex, 0, draggedItem);
-                
-                // Обновляем основной массив
-                referenceImages = newArray;
-                
-                console.log(`[REFERENCE] Референс ${draggedIndex + 1} перемещен на позицию ${newIndex + 1}`, 
-                    referenceImages.map((r, i) => `Реф${i+1}`));
-                
-                // Обновляем превью с правильной нумерацией (полная перерисовка)
-                updateReferencePreview();
-                updateAspectRatioOptions();
             }
+            
+            // Обновляем основной массив
+            referenceImages = newArray;
+            
+            console.log(`[REFERENCE] Референс ${draggedIndex + 1} перемещен на позицию ${targetIndex + 1}`, 
+                referenceImages.map((r, i) => `Реф${i+1}`));
+            
+            // Обновляем превью с правильной нумерацией (полная перерисовка)
+            updateReferencePreview();
+            updateAspectRatioOptions();
         });
         
         const img = document.createElement('img');
@@ -273,12 +301,10 @@ function updateReferencePreview() {
         label.style.border = '1px solid rgba(102, 126, 234, 0.6)';
         label.style.fontWeight = '700';
         label.style.zIndex = '6';
-        // ВАЖНО: Используем индекс из массива, а не из forEach
-        // Это гарантирует что "Реф1" всегда будет у первого элемента массива
-        const actualIndex = referenceImages.findIndex(r => r.id === ref.id);
-        const displayIndex = actualIndex >= 0 ? actualIndex : index;
-        label.textContent = `Реф${displayIndex + 1}`;
-        label.setAttribute('data-ref-index', displayIndex);
+        // ВАЖНО: Используем индекс из forEach - он всегда соответствует позиции в массиве
+        // Индекс начинается с 0, поэтому добавляем 1 для отображения (Реф1, Реф2, и т.д.)
+        label.textContent = `Реф${index + 1}`;
+        label.setAttribute('data-ref-index', index);
         
         // Кнопка скачивания референса (в правом верхнем углу, стиль как "завершено")
         const downloadBtn = document.createElement('button');

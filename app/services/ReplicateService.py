@@ -15,7 +15,7 @@ class ReplicateService:
     """Сервис для генерации изображений через Replicate API"""
     
     MODEL_NAME = "google/nano-banana-pro"
-    TIMEOUT = 600  # 10 минут
+    TIMEOUT = 900  # 15 минут (увеличено для сложных генераций)
     
     # Лимиты Nano Banana Pro API для референсных изображений
     MAX_REF_DIMENSION = 2048  # Максимальный размер по большей стороне
@@ -131,8 +131,19 @@ class ReplicateService:
         """
         if not api_token:
             raise ValueError("Replicate API token is required")
-        self.client = replicate.Client(api_token=api_token)
-        logger.info("[REPLICATE] Клиент Replicate создан")
+        # Создаем клиент с увеличенными таймаутами
+        # httpx используется внутри replicate клиента
+        import httpx
+        http_client = httpx.Client(
+            timeout=httpx.Timeout(
+                connect=60.0,  # Таймаут подключения: 60 секунд
+                read=self.TIMEOUT,  # Таймаут чтения: 15 минут
+                write=60.0,  # Таймаут записи: 60 секунд
+                pool=60.0  # Таймаут пула: 60 секунд
+            )
+        )
+        self.client = replicate.Client(api_token=api_token, http_client=http_client)
+        logger.info(f"[REPLICATE] Клиент Replicate создан с таймаутом {self.TIMEOUT} секунд")
     
     def generate_image(
         self,
@@ -585,6 +596,16 @@ class ReplicateService:
             # Улучшенное извлечение деталей ошибки
             error_message = str(e)
             
+            # Специальная обработка ошибки 499 "Client Closed Request"
+            if "499" in error_message or "Client Closed Request" in error_message:
+                error_message = (
+                    "Соединение было закрыто до завершения генерации. "
+                    "Это может произойти если генерация занимает слишком много времени или есть проблемы с сетью. "
+                    "Попробуйте повторить запрос или упростить промпт."
+                )
+                logger.warning(f"[REPLICATE] Обнаружена ошибка 499 (Client Closed Request). "
+                             f"Возможные причины: таймаут, проблемы с сетью, слишком долгая генерация.")
+            
             # Если это ошибка от Replicate API, пытаемся извлечь больше деталей
             if hasattr(e, 'message'):
                 error_message = str(e.message)
@@ -594,12 +615,28 @@ class ReplicateService:
             # Проверяем наличие дополнительной информации в исключении
             error_details = []
             if hasattr(e, '__cause__') and e.__cause__:
-                error_details.append(f"Причина: {str(e.__cause__)}")
+                cause_str = str(e.__cause__)
+                error_details.append(f"Причина: {cause_str}")
+                # Если в причине тоже есть 499, добавляем пояснение
+                if "499" in cause_str or "Client Closed Request" in cause_str:
+                    error_message = (
+                        "Соединение было закрыто до завершения генерации. "
+                        "Это может произойти если генерация занимает слишком много времени или есть проблемы с сетью. "
+                        "Попробуйте повторить запрос или упростить промпт."
+                    )
             if hasattr(e, '__context__') and e.__context__:
-                error_details.append(f"Контекст: {str(e.__context__)}")
+                context_str = str(e.__context__)
+                error_details.append(f"Контекст: {context_str}")
+                # Если в контексте тоже есть 499, добавляем пояснение
+                if "499" in context_str or "Client Closed Request" in context_str:
+                    error_message = (
+                        "Соединение было закрыто до завершения генерации. "
+                        "Это может произойти если генерация занимает слишком много времени или есть проблемы с сетью. "
+                        "Попробуйте повторить запрос или упростить промпт."
+                    )
             
-            # Если есть детали, добавляем их к сообщению
-            if error_details:
+            # Если есть детали, добавляем их к сообщению (но не для 499, чтобы не дублировать)
+            if error_details and "499" not in error_message and "Client Closed Request" not in error_message:
                 error_message = f"{error_message} ({', '.join(error_details)})"
             
             logger.error(f"[REPLICATE] Детали ошибки: {error_message}")
