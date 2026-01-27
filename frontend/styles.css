@@ -18,12 +18,12 @@
 }
 
 [data-bs-theme="light"] {
-    --bg-primary: #f7fafc;
-    --bg-secondary: #edf2f7;
-    --bg-hover: #e2e8f0;
+    --bg-primary: #f0f4f8;
+    --bg-secondary: #e2e8f0;
+    --bg-hover: #cbd5e0;
     --border-color: #667eea;
     --border-hover: #764ba2;
-    --text-primary: #2d3748;
+    --text-primary: #1a202c;
     --text-secondary: #4a5568;
     --accent-primary: #667eea;
     --accent-secondary: #764ba2;
@@ -40,7 +40,7 @@ body {
 }
 
 [data-bs-theme="light"] body {
-    background: linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%);
+    background: linear-gradient(135deg, #d6e4f0 0%, #c8d6e5 100%);
 }
 
 .navbar-brand {
@@ -573,6 +573,62 @@ body {
 
 [data-bs-theme="light"] .navbar-dark {
     background-color: var(--bg-secondary) !important;
+}
+
+/* Исправление белого текста в светлой теме */
+[data-bs-theme="light"] .text-light,
+[data-bs-theme="light"] .text-white,
+[data-bs-theme="light"] .navbar-dark .text-light,
+[data-bs-theme="light"] .navbar-dark .text-white,
+[data-bs-theme="light"] .navbar-dark .nav-link,
+[data-bs-theme="light"] .navbar-dark .navbar-brand,
+[data-bs-theme="light"] .form-check-label.text-light,
+[data-bs-theme="light"] .card .text-light,
+[data-bs-theme="light"] .modal .text-light,
+[data-bs-theme="light"] .modal .text-white,
+[data-bs-theme="light"] .btn-link.text-white,
+[data-bs-theme="light"] .btn-link.text-light {
+    color: var(--text-primary) !important;
+}
+
+[data-bs-theme="light"] .btn-outline-light {
+    border-color: var(--border-color);
+    color: var(--text-primary) !important;
+}
+
+[data-bs-theme="light"] .btn-outline-light:hover {
+    background-color: var(--bg-hover);
+    border-color: var(--border-hover);
+    color: var(--text-primary) !important;
+}
+
+/* Исправление фона для светлой темы - менее яркий */
+[data-bs-theme="light"] .card,
+[data-bs-theme="light"] .modal-content,
+[data-bs-theme="light"] .dropdown-menu {
+    background-color: var(--bg-primary) !important;
+}
+
+[data-bs-theme="light"] .card-header,
+[data-bs-theme="light"] .modal-header,
+[data-bs-theme="light"] .modal-footer {
+    background-color: var(--bg-secondary) !important;
+}
+
+/* Исправление текста в карточках генераций для светлой темы */
+[data-bs-theme="light"] .generation-card .text-light,
+[data-bs-theme="light"] .prompt-text.text-light {
+    color: var(--text-primary) !important;
+}
+
+/* Исправление фона для drop zone в светлой теме */
+[data-bs-theme="light"] .reference-drop-zone-content {
+    background-color: var(--bg-secondary) !important;
+    border-color: var(--border-color) !important;
+}
+
+[data-bs-theme="light"] .reference-drop-zone-content .text-light {
+    color: var(--text-primary) !important;
 }
 
 /* Стили для модальных окон */
