@@ -89,19 +89,30 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                     reference_images=request_data.get('reference_images')
                 )
             except Exception as gen_error:
-                # Ошибка при генерации (например, неправильный API ключ)
-                error_msg = f"Ошибка генерации через Replicate API: {str(gen_error)}"
-                logger.error(f"[GENERATION] {error_msg}", exc_info=True)
+                # Ошибка при генерации (например, неправильный API ключ, таймаут и т.д.)
+                # Улучшенное извлечение деталей ошибки
+                error_msg = str(gen_error)
+                
+                # Если это специфичная ошибка Replicate, извлекаем больше деталей
+                if hasattr(gen_error, 'message'):
+                    error_msg = str(gen_error.message)
+                elif hasattr(gen_error, 'args') and len(gen_error.args) > 0:
+                    error_msg = str(gen_error.args[0])
+                
+                # Добавляем префикс для ясности
+                full_error_msg = f"Ошибка генерации через Replicate API: {error_msg}"
+                
+                logger.error(f"[GENERATION] {full_error_msg}", exc_info=True)
                 generation.status = "failed"
                 generation.completed_at = datetime.utcnow()
                 if not generation.generation_metadata:
                     generation.generation_metadata = {}
-                generation.generation_metadata['error'] = error_msg
+                generation.generation_metadata['error'] = full_error_msg
                 # ВАЖНО: Уведомляем SQLAlchemy об изменении JSON поля
                 from sqlalchemy.orm.attributes import flag_modified
                 flag_modified(generation, "generation_metadata")
                 session.commit()
-                logger.error(f"[GENERATION] Генерация {generation_id} завершена с ошибкой генерации: {error_msg}")
+                logger.error(f"[GENERATION] Генерация {generation_id} завершена с ошибкой генерации: {full_error_msg}")
                 return
             
             if result['success']:
@@ -244,14 +255,24 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                     generation.generation_metadata = {}
                 
                 # Извлекаем ошибку из result
-                error_message = result.get('error', 'Неизвестная ошибка')
-                if not error_message or error_message == 'Неизвестная ошибка':
-                    # Если ошибка не указана, проверяем другие возможные поля
-                    error_message = result.get('message', result.get('detail', 'Неизвестная ошибка генерации'))
+                error_message = result.get('error')
+                
+                # Если ошибка не указана или пустая, проверяем другие возможные поля
+                if not error_message or (isinstance(error_message, str) and error_message.strip() == ''):
+                    error_message = result.get('message') or result.get('detail') or result.get('error_message')
+                
+                # Если всё ещё нет ошибки, используем дефолтное сообщение
+                if not error_message or (isinstance(error_message, str) and error_message.strip() == ''):
+                    error_message = 'Неизвестная ошибка генерации'
+                    logger.warning(f"[GENERATION] Генерация {generation_id} завершена с ошибкой, но error_message отсутствует в result. Result keys: {list(result.keys())}")
                 
                 # Убеждаемся что error_message - строка
                 if not isinstance(error_message, str):
                     error_message = str(error_message)
+                
+                # Обрезаем слишком длинные сообщения об ошибках (максимум 2000 символов)
+                if len(error_message) > 2000:
+                    error_message = error_message[:2000] + "... (сообщение обрезано)"
                 
                 generation.generation_metadata['error'] = error_message
                 
@@ -400,8 +421,41 @@ async def generate_image(
                             elif 'webp' in mime_type:
                                 ext = 'webp'
                             
-                            # Сохраняем в MinIO
-                            ref_filename = f"references/{datetime.now().strftime('%Y%m%d_%H%M%S')}_{generation_id}_{idx}_{uuid.uuid4().hex[:8]}.{ext}"
+                            # Валидация формата изображения через PIL (только проверка, без изменения)
+                            try:
+                                from PIL import Image as PILImage
+                                import io as image_io
+                                img = PILImage.open(image_io.BytesIO(image_bytes))
+                                img.verify()  # Проверяем что это валидное изображение
+                                img = PILImage.open(image_io.BytesIO(image_bytes))  # Пересоздаем после verify
+                                
+                                # Проверяем что изображение не слишком большое (максимум 8192x8192 для валидации)
+                                MAX_DIMENSION_VALIDATION = 8192
+                                if img.width > MAX_DIMENSION_VALIDATION or img.height > MAX_DIMENSION_VALIDATION:
+                                    error_msg = f"Референс {idx + 1} слишком большой ({img.width}x{img.height}). Максимальный размер: {MAX_DIMENSION_VALIDATION}x{MAX_DIMENSION_VALIDATION}"
+                                    logger.error(f"[GENERATION] {error_msg}")
+                                    raise ValueError(error_msg)
+                                
+                                # Проверяем размер файла (максимум 20MB для сохранения в MinIO)
+                                MAX_REF_SIZE = 20 * 1024 * 1024  # 20MB
+                                if len(image_bytes) > MAX_REF_SIZE:
+                                    error_msg = f"Референс {idx + 1} слишком большой ({len(image_bytes) / 1024 / 1024:.1f}MB). Максимальный размер: {MAX_REF_SIZE / 1024 / 1024}MB"
+                                    logger.error(f"[GENERATION] {error_msg}")
+                                    raise ValueError(error_msg)
+                                
+                            except ValueError:
+                                raise  # Пробрасываем ValueError дальше
+                            except Exception as img_error:
+                                error_msg = f"Референс {idx + 1} не является валидным изображением: {str(img_error)}"
+                                logger.error(f"[GENERATION] {error_msg}")
+                                raise ValueError(error_msg)
+                            
+                            # Укороченное имя файла (только timestamp + короткий UUID)
+                            # Формат: ref_YYYYMMDD_HHMMSS_XXXX.ext (где XXXX - первые 4 символа UUID)
+                            ref_filename = f"references/ref_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:4]}.{ext}"
+                            
+                            # ВАЖНО: Сохраняем ОРИГИНАЛЬНОЕ качество в MinIO (без обработки)
+                            # Оптимизация будет происходить только при отправке в Replicate API
                             upload_result = minio.upload_image(
                                 image_bytes,
                                 ref_filename,

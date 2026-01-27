@@ -17,6 +17,111 @@ class ReplicateService:
     MODEL_NAME = "google/nano-banana-pro"
     TIMEOUT = 600  # 10 минут
     
+    # Лимиты Nano Banana Pro API для референсных изображений
+    MAX_REF_DIMENSION = 2048  # Максимальный размер по большей стороне
+    MAX_REF_SIZE_MB = 5  # Максимальный размер файла в MB
+    
+    def _optimize_image_for_api(self, image_data: bytes, ref_index: int) -> bytes:
+        """
+        Оптимизирует изображение для Nano Banana Pro API.
+        Сохраняет оригинал в MinIO, но оптимизирует для отправки в API.
+        
+        Args:
+            image_data: Байты изображения
+            ref_index: Индекс референса (для логирования)
+        
+        Returns:
+            bytes: Оптимизированные байты изображения
+        """
+        try:
+            from PIL import Image as PILImage
+            import io as image_io
+            
+            # Открываем изображение
+            img = PILImage.open(image_io.BytesIO(image_data))
+            
+            original_size = len(image_data)
+            original_dimensions = (img.width, img.height)
+            
+            # Проверяем размеры - если больше лимита, уменьшаем
+            needs_resize = False
+            if img.width > self.MAX_REF_DIMENSION or img.height > self.MAX_REF_DIMENSION:
+                needs_resize = True
+                logger.info(f"[REPLICATE] Референс {ref_index}: размер {img.width}x{img.height} превышает лимит {self.MAX_REF_DIMENSION}px, уменьшаем...")
+                
+                # Вычисляем новые размеры с сохранением пропорций
+                if img.width > img.height:
+                    new_width = self.MAX_REF_DIMENSION
+                    new_height = int(img.height * (self.MAX_REF_DIMENSION / img.width))
+                else:
+                    new_height = self.MAX_REF_DIMENSION
+                    new_width = int(img.width * (self.MAX_REF_DIMENSION / img.height))
+                
+                img = img.resize((new_width, new_height), PILImage.Resampling.LANCZOS)
+            
+            # Проверяем размер файла - если больше лимита, сжимаем
+            output = image_io.BytesIO()
+            max_size_bytes = self.MAX_REF_SIZE_MB * 1024 * 1024
+            
+            # Определяем формат
+            if img.format == 'PNG':
+                quality = 95
+                while True:
+                    output.seek(0)
+                    output.truncate(0)
+                    img.save(output, format='PNG', optimize=True, compress_level=6)
+                    if len(output.getvalue()) <= max_size_bytes or quality <= 50:
+                        break
+                    # Если PNG слишком большой, конвертируем в JPEG
+                    if img.mode in ('RGBA', 'LA', 'P'):
+                        # Создаем белый фон для прозрачности
+                        background = PILImage.new('RGB', img.size, (255, 255, 255))
+                        if img.mode == 'P':
+                            img = img.convert('RGBA')
+                        background.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
+                        img = background
+                    else:
+                        img = img.convert('RGB')
+                    quality = 85
+                    output.seek(0)
+                    output.truncate(0)
+                    img.save(output, format='JPEG', quality=quality, optimize=True)
+                    break
+            elif img.format == 'WEBP':
+                quality = 85
+                while True:
+                    output.seek(0)
+                    output.truncate(0)
+                    img.save(output, format='WEBP', quality=quality, method=6)
+                    if len(output.getvalue()) <= max_size_bytes or quality <= 50:
+                        break
+                    quality -= 5
+            else:
+                # JPEG или другой формат
+                quality = 85
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
+                while True:
+                    output.seek(0)
+                    output.truncate(0)
+                    img.save(output, format='JPEG', quality=quality, optimize=True)
+                    if len(output.getvalue()) <= max_size_bytes or quality <= 50:
+                        break
+                    quality -= 5
+            
+            optimized_data = output.getvalue()
+            optimized_size = len(optimized_data)
+            
+            if needs_resize or optimized_size < original_size * 0.9:
+                logger.info(f"[REPLICATE] Референс {ref_index} оптимизирован: {original_dimensions[0]}x{original_dimensions[1]} ({original_size / 1024:.1f}KB) -> "
+                          f"{img.width}x{img.height} ({optimized_size / 1024:.1f}KB)")
+            
+            return optimized_data
+            
+        except Exception as e:
+            logger.warning(f"[REPLICATE] Не удалось оптимизировать референс {ref_index}: {e}. Используем оригинал.")
+            return image_data  # Возвращаем оригинал если оптимизация не удалась
+    
     def __init__(self, api_token: str):
         """
         Инициализация клиента Replicate
@@ -84,14 +189,23 @@ class ReplicateService:
                                 import base64
                                 header, encoded = img.split(',', 1)
                                 img_data = base64.b64decode(encoded)
+                                
+                                # Оптимизируем изображение для Nano Banana Pro API (если нужно)
+                                img_data = self._optimize_image_for_api(img_data, idx)
+                                
                                 processed_images.append(io.BytesIO(img_data))
                                 logger.debug(f"[REPLICATE] Референс {idx}: обработан base64 изображение")
                             elif img.startswith(('http://', 'https://')):
-                                # URL изображение
+                                # URL изображение - загружаем и оптимизируем
                                 img_response = requests.get(img, timeout=30)
                                 if img_response.status_code == 200:
-                                    processed_images.append(io.BytesIO(img_response.content))
-                                    logger.debug(f"[REPLICATE] Референс {idx}: загружен с URL")
+                                    img_data = img_response.content
+                                    
+                                    # Оптимизируем изображение для Nano Banana Pro API (если нужно)
+                                    img_data = self._optimize_image_for_api(img_data, idx)
+                                    
+                                    processed_images.append(io.BytesIO(img_data))
+                                    logger.debug(f"[REPLICATE] Референс {idx}: загружен с URL и оптимизирован")
                                 else:
                                     logger.warning(f"[REPLICATE] Референс {idx}: не удалось загрузить с URL (статус {img_response.status_code})")
                             else:
@@ -101,8 +215,13 @@ class ReplicateService:
                         elif hasattr(img, 'read'):
                             # Если это файлоподобный объект
                             img.seek(0)
-                            processed_images.append(img)
-                            logger.debug(f"[REPLICATE] Референс {idx}: обработан файлоподобный объект")
+                            img_data = img.read()
+                            
+                            # Оптимизируем изображение для Nano Banana Pro API (если нужно)
+                            img_data = self._optimize_image_for_api(img_data, idx)
+                            
+                            processed_images.append(io.BytesIO(img_data))
+                            logger.debug(f"[REPLICATE] Референс {idx}: обработан файлоподобный объект и оптимизирован")
                     except Exception as e:
                         logger.error(f"[REPLICATE] Ошибка обработки референса {idx}: {e}")
                         continue
@@ -120,13 +239,42 @@ class ReplicateService:
             
             # Улучшение промпта для text-to-image (если нет референсов)
             if not reference_images or len(reference_images) == 0:
-                # Для text-to-image добавляем инструкцию, если промпт слишком короткий
+                # Для text-to-image всегда улучшаем промпт, чтобы модель понимала что нужно генерировать изображение
                 prompt_lower = prompt.lower().strip()
-                if len(prompt) < 10 or not any(word in prompt_lower for word in ['изображение', 'image', 'картинка', 'picture', 'фото', 'photo', 'generate', 'создать', 'сделать']):
-                    # Добавляем префикс для ясности
-                    enhanced_prompt = f"Generate an image of {prompt}"
-                    logger.info(f"[REPLICATE] Промпт улучшен для text-to-image: {enhanced_prompt[:100]}...")
-                    input_params["prompt"] = enhanced_prompt
+                
+                # Список слов, которые явно указывают на генерацию изображения
+                image_generation_keywords = [
+                    'generate', 'создать', 'сделать', 'сгенерируй', 'сгенерировать',
+                    'изображение', 'image', 'картинка', 'picture', 'фото', 'photo',
+                    'draw', 'рисовать', 'нарисовать', 'нарисуй',
+                    'create', 'создай', 'создавать',
+                    'design', 'дизайн', 'спроектировать',
+                    'icon', 'иконка', 'favicon', 'фавикон',
+                    'logo', 'логотип', 'лого'
+                ]
+                
+                # Проверяем есть ли явные указания на генерацию изображения
+                has_generation_keyword = any(keyword in prompt_lower for keyword in image_generation_keywords)
+                
+                # Проверяем начинается ли промпт с указания на генерацию
+                starts_with_generation = any(prompt_lower.startswith(keyword) for keyword in ['generate', 'создать', 'сделать', 'сгенерируй', 'create', 'draw', 'нарисуй'])
+                
+                # Если нет явных указаний на генерацию изображения, добавляем префикс
+                if not has_generation_keyword or not starts_with_generation:
+                    # Если промпт уже начинается с "Generate" или похожего, не дублируем
+                    if not prompt_lower.startswith(('generate', 'create', 'draw', 'make', 'создать', 'сделать', 'нарисовать')):
+                        enhanced_prompt = f"Generate an image of {prompt}"
+                        logger.info(f"[REPLICATE] Промпт улучшен для text-to-image: {enhanced_prompt[:100]}...")
+                        input_params["prompt"] = enhanced_prompt
+                    else:
+                        # Промпт уже начинается с команды генерации, но может быть недостаточно четким
+                        # Добавляем уточнение если нужно
+                        if 'image' not in prompt_lower and 'изображение' not in prompt_lower and 'картинка' not in prompt_lower:
+                            enhanced_prompt = f"{prompt}, high quality image"
+                            logger.info(f"[REPLICATE] Промпт улучшен для text-to-image (добавлено уточнение): {enhanced_prompt[:100]}...")
+                            input_params["prompt"] = enhanced_prompt
+                        else:
+                            input_params["prompt"] = prompt
                 else:
                     input_params["prompt"] = prompt
             
@@ -433,10 +581,33 @@ class ReplicateService:
                 
         except Exception as e:
             logger.error(f"[REPLICATE] Ошибка генерации: {e}", exc_info=True)
+            
+            # Улучшенное извлечение деталей ошибки
+            error_message = str(e)
+            
+            # Если это ошибка от Replicate API, пытаемся извлечь больше деталей
+            if hasattr(e, 'message'):
+                error_message = str(e.message)
+            elif hasattr(e, 'args') and len(e.args) > 0:
+                error_message = str(e.args[0])
+            
+            # Проверяем наличие дополнительной информации в исключении
+            error_details = []
+            if hasattr(e, '__cause__') and e.__cause__:
+                error_details.append(f"Причина: {str(e.__cause__)}")
+            if hasattr(e, '__context__') and e.__context__:
+                error_details.append(f"Контекст: {str(e.__context__)}")
+            
+            # Если есть детали, добавляем их к сообщению
+            if error_details:
+                error_message = f"{error_message} ({', '.join(error_details)})"
+            
+            logger.error(f"[REPLICATE] Детали ошибки: {error_message}")
+            
             return {
                 'success': False,
                 'image_url': None,
                 'image_data': None,
-                'error': str(e)
+                'error': error_message
             }
 

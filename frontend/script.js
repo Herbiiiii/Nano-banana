@@ -78,8 +78,27 @@ function removeApiKey() {
 
 // Обработка файла референса (используется и для загрузки, и для paste)
 function processReferenceFile(file) {
+    // Валидация типа файла
     if (!file.type.startsWith('image/')) {
         console.error(`[REFERENCE] Файл не является изображением: ${file.name}`);
+        showToast(`Ошибка: файл не является изображением (${file.name})`, 'error');
+        return;
+    }
+    
+    // Валидация размера файла (максимум 20MB)
+    const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
+    if (file.size > MAX_FILE_SIZE) {
+        const sizeMB = (file.size / 1024 / 1024).toFixed(1);
+        console.error(`[REFERENCE] Файл слишком большой: ${file.name} (${sizeMB}MB)`);
+        showToast(`Ошибка: файл слишком большой (${sizeMB}MB). Максимальный размер: 20MB`, 'error');
+        return;
+    }
+    
+    // Валидация количества референсов (максимум 4)
+    const MAX_REFERENCES = 4;
+    if (referenceImages.length >= MAX_REFERENCES) {
+        console.error(`[REFERENCE] Достигнут лимит референсов: ${referenceImages.length}/${MAX_REFERENCES}`);
+        showToast(`Ошибка: достигнут лимит референсов (${MAX_REFERENCES}). Удалите один из существующих.`, 'error');
         return;
     }
     
@@ -88,6 +107,14 @@ function processReferenceFile(file) {
         // Определяем соотношение сторон изображения
         const img = new Image();
         img.onload = () => {
+            // Валидация размеров изображения (максимум 8192x8192)
+            const MAX_DIMENSION = 8192;
+            if (img.width > MAX_DIMENSION || img.height > MAX_DIMENSION) {
+                console.error(`[REFERENCE] Изображение слишком большое: ${img.width}x${img.height}`);
+                showToast(`Ошибка: изображение слишком большое (${img.width}x${img.height}px). Максимальный размер: ${MAX_DIMENSION}x${MAX_DIMENSION}px`, 'error');
+                return;
+            }
+            
             const aspectRatio = calculateAspectRatio(img.width, img.height);
             const refObj = {
                 file: file,
@@ -107,13 +134,13 @@ function processReferenceFile(file) {
         };
         img.onerror = () => {
             console.error(`[REFERENCE] Ошибка загрузки изображения: ${file.name}`);
-            showToast(`Ошибка загрузки изображения: ${file.name}`, 'error');
+            showToast(`Ошибка: не удалось загрузить изображение (${file.name})`, 'error');
         };
         img.src = event.target.result;
     };
     reader.onerror = () => {
         console.error(`[REFERENCE] Ошибка чтения файла: ${file.name}`);
-        showToast(`Ошибка чтения файла: ${file.name}`, 'error');
+        showToast(`Ошибка: не удалось прочитать файл (${file.name})`, 'error');
     };
     reader.readAsDataURL(file);
 }

@@ -39,3 +39,4 @@ def save_error_to_file(error_data: dict):
     except Exception as e:
         logger.error(f"[ERROR_LOG] Не удалось сохранить ошибку: {e}")
 
+
