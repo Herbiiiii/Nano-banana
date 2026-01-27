@@ -201,17 +201,45 @@ body {
 .btn-outline-light {
     border: 2px solid rgba(255, 255, 255, 0.3);
     color: var(--text-primary);
-    background: transparent;
+    background: transparent !important;
     font-weight: 600;
     transition: all 0.3s;
 }
 
-.btn-outline-light:hover {
-    background: linear-gradient(135deg, var(--metal-gray) 0%, var(--metal-gray-dark) 100%);
+[data-bs-theme="light"] .btn-outline-light {
+    border: 2px solid var(--border-color);
+    color: var(--text-primary);
+    background: transparent !important;
+}
+
+.btn-outline-light:hover,
+.btn-outline-light:focus {
+    background: linear-gradient(135deg, var(--metal-gray) 0%, var(--metal-gray-dark) 100%) !important;
     border-color: var(--border-color);
     color: var(--text-primary);
     transform: translateY(-2px);
     box-shadow: 0 4px 12px var(--shadow);
+}
+
+[data-bs-theme="light"] .btn-outline-light:hover,
+[data-bs-theme="light"] .btn-outline-light:focus {
+    background: var(--bg-hover) !important;
+    border-color: var(--border-hover);
+    color: var(--text-primary);
+}
+
+.btn-outline-light:active,
+.btn-outline-light.active {
+    background: linear-gradient(135deg, var(--metal-gray) 0%, var(--metal-gray-dark) 100%) !important;
+    border-color: var(--border-hover);
+    color: var(--text-primary);
+}
+
+[data-bs-theme="light"] .btn-outline-light:active,
+[data-bs-theme="light"] .btn-outline-light.active {
+    background: var(--bg-hover) !important;
+    border-color: var(--border-hover);
+    color: var(--text-primary);
 }
 
 .btn-light {
@@ -572,7 +600,8 @@ body {
 }
 
 [data-bs-theme="light"] .navbar-dark {
-    background-color: var(--bg-secondary) !important;
+    background-color: #e2e8f0 !important;
+    border-bottom: 2px solid var(--border-color);
 }
 
 /* Исправление белого текста в светлой теме */
@@ -633,24 +662,106 @@ body {
 
 /* Стили для модальных окон */
 .modal-content {
-    background-color: var(--bg-primary);
-    border: 2px solid var(--border-color);
-    color: var(--text-primary);
+    background-color: var(--bg-primary) !important;
+    border: 2px solid var(--border-color) !important;
+    color: var(--text-primary) !important;
 }
 
 .modal-header {
-    border-bottom: 2px solid rgba(102, 126, 234, 0.2);
-    background-color: var(--bg-secondary);
+    border-bottom: 2px solid rgba(102, 126, 234, 0.2) !important;
+    background-color: var(--bg-secondary) !important;
+    color: var(--text-primary) !important;
 }
 
 .modal-body {
-    background-color: var(--bg-primary);
-    color: var(--text-primary);
+    background-color: var(--bg-primary) !important;
+    color: var(--text-primary) !important;
 }
 
 .modal-footer {
-    border-top: 2px solid rgba(102, 126, 234, 0.2);
-    background-color: var(--bg-secondary);
+    border-top: 2px solid rgba(102, 126, 234, 0.2) !important;
+    background-color: var(--bg-secondary) !important;
+    color: var(--text-primary) !important;
+}
+
+/* Исправление текста в модальных окнах для светлой темы */
+[data-bs-theme="light"] .modal-content .text-light,
+[data-bs-theme="light"] .modal-content .text-white,
+[data-bs-theme="light"] .modal-header .text-light,
+[data-bs-theme="light"] .modal-header .text-white,
+[data-bs-theme="light"] .modal-body .text-light,
+[data-bs-theme="light"] .modal-body .text-white {
+    color: var(--text-primary) !important;
+}
+
+[data-bs-theme="light"] .modal-content .text-info {
+    color: var(--accent-primary) !important;
+}
+
+[data-bs-theme="light"] .modal-content .text-danger {
+    color: #e53e3e !important;
+}
+
+/* Исправление фона для элементов ошибок в светлой теме */
+[data-bs-theme="light"] .modal-content [style*="background: rgba(0, 0, 0, 0.3)"] {
+    background: rgba(0, 0, 0, 0.05) !important;
+}
+
+[data-bs-theme="light"] .modal-content [style*="background: rgba(102, 126, 234, 0.1)"] {
+    background: rgba(102, 126, 234, 0.15) !important;
+}
+
+[data-bs-theme="light"] .modal-content [style*="background: rgba(229, 62, 62, 0.2)"] {
+    background: rgba(229, 62, 62, 0.15) !important;
+}
+
+/* Стили для кастомного модального окна параметров генерации */
+.generation-params-modal {
+    position: fixed !important;
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%) !important;
+    background: rgba(26, 26, 46, 0.98) !important;
+    border: 2px solid var(--border-color) !important;
+    border-radius: 12px !important;
+    padding: 1.5rem !important;
+    z-index: 10000 !important;
+    max-width: 600px !important;
+    width: 90% !important;
+    max-height: 90vh !important;
+    overflow-y: auto !important;
+    backdrop-filter: blur(10px) !important;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5) !important;
+}
+
+[data-bs-theme="light"] .generation-params-modal {
+    background: var(--bg-primary) !important;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2) !important;
+}
+
+/* Исправление текста в кастомном модальном окне */
+[data-bs-theme="light"] .generation-params-modal .text-light,
+[data-bs-theme="light"] .generation-params-modal .text-white,
+[data-bs-theme="light"] .generation-params-modal h5,
+[data-bs-theme="light"] .generation-params-modal p,
+[data-bs-theme="light"] .generation-params-modal strong {
+    color: var(--text-primary) !important;
+}
+
+[data-bs-theme="light"] .generation-params-modal .text-info {
+    color: var(--accent-primary) !important;
+}
+
+[data-bs-theme="light"] .generation-params-modal .text-danger {
+    color: #e53e3e !important;
+}
+
+[data-bs-theme="light"] .generation-params-modal .btn-link {
+    color: var(--text-primary) !important;
+}
+
+[data-bs-theme="light"] .generation-params-modal .btn-link:hover {
+    color: var(--accent-primary) !important;
 }
 
 /* Стили для алертов */
