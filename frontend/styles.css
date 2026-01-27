@@ -597,11 +597,13 @@ body {
 .navbar-dark {
     background-color: var(--bg-primary) !important;
     border-bottom: 2px solid var(--border-color);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 [data-bs-theme="light"] .navbar-dark {
-    background-color: #e2e8f0 !important;
+    background: linear-gradient(135deg, #e2e8f0 0%, #cbd5e0 100%) !important;
     border-bottom: 2px solid var(--border-color);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 /* Исправление белого текста в светлой теме */
@@ -618,6 +620,44 @@ body {
 [data-bs-theme="light"] .btn-link.text-white,
 [data-bs-theme="light"] .btn-link.text-light {
     color: var(--text-primary) !important;
+}
+
+/* Исправление кнопки информации на карточках генераций */
+[data-bs-theme="light"] .info-btn,
+[data-bs-theme="light"] .info-btn.text-white,
+[data-bs-theme="light"] .info-btn.text-light {
+    color: var(--text-primary) !important;
+    background: rgba(102, 126, 234, 0.1) !important;
+    border-radius: 50% !important;
+    width: 24px !important;
+    height: 24px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    transition: all 0.2s !important;
+}
+
+[data-bs-theme="light"] .info-btn:hover {
+    background: rgba(102, 126, 234, 0.2) !important;
+    color: var(--accent-primary) !important;
+    transform: scale(1.1) !important;
+}
+
+/* Для темной темы тоже улучшаем видимость */
+.info-btn {
+    background: rgba(102, 126, 234, 0.2) !important;
+    border-radius: 50% !important;
+    width: 24px !important;
+    height: 24px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    transition: all 0.2s !important;
+}
+
+.info-btn:hover {
+    background: rgba(102, 126, 234, 0.4) !important;
+    transform: scale(1.1) !important;
 }
 
 [data-bs-theme="light"] .btn-outline-light {
