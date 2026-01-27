@@ -14,6 +14,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-nano_banana_user}
       # ВАЖНО: Измените пароль для продакшена через .env!
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nano_banana_pass}
+      # Разрешаем подключения из Docker сети
+      POSTGRES_HOST_AUTH_METHOD: md5
     ports:
       - "5432:5432"
     volumes:
