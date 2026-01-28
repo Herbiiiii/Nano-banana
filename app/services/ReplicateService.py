@@ -131,18 +131,9 @@ class ReplicateService:
         """
         if not api_token:
             raise ValueError("Replicate API token is required")
-        # Создаем клиент с увеличенными таймаутами
-        # httpx используется внутри replicate клиента
-        import httpx
-        http_client = httpx.Client(
-            timeout=httpx.Timeout(
-                connect=60.0,  # Таймаут подключения: 60 секунд
-                read=self.TIMEOUT,  # Таймаут чтения: 15 минут
-                write=60.0,  # Таймаут записи: 60 секунд
-                pool=60.0  # Таймаут пула: 60 секунд
-            )
-        )
-        self.client = replicate.Client(api_token=api_token, http_client=http_client)
+        # Создаем клиент Replicate
+        # Таймауты настраиваются через переменные окружения или используются значения по умолчанию
+        self.client = replicate.Client(api_token=api_token)
         logger.info(f"[REPLICATE] Клиент Replicate создан с таймаутом {self.TIMEOUT} секунд")
     
     def generate_image(

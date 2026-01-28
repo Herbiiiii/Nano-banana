@@ -40,3 +40,4 @@ def save_error_to_file(error_data: dict):
         logger.error(f"[ERROR_LOG] Не удалось сохранить ошибку: {e}")
 
 
+
