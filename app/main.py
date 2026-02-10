@@ -16,6 +16,12 @@ import logging
 import os
 from logging.handlers import RotatingFileHandler
 from app.services.ErrorLogger import get_logs_dir, save_error_to_file
+import asyncio
+from datetime import datetime, timedelta
+from typing import List
+from app.models.base import Generation
+from app.services.MinioService import MinioService
+from app.config import settings as app_settings
 
 # Создаем папки для логов если их нет
 logs_dir = get_logs_dir()
@@ -53,6 +59,9 @@ root_logger.addHandler(file_handler)
 root_logger.addHandler(console_handler)
 
 logger = logging.getLogger(__name__)
+
+# Глобальный сервис MinIO для фоновых задач
+minio_background = MinioService()
 
 app = FastAPI(
     title="Nano Banana Pro API",
@@ -152,7 +161,93 @@ async def global_exception_handler(request: Request, exc: Exception):
         content={"detail": "Внутренняя ошибка сервера"}
     )
 
-# Инициализация БД при старте
+# Фоновая задача автоочистки старых генераций и связанных файлов
+async def auto_cleanup_task():
+    """
+    Периодически (раз в сутки) удаляет генерации и файлы старше 7 дней.
+    """
+    # Небольшая задержка после старта приложения, чтобы всё инициализировалось
+    await asyncio.sleep(60)
+    retention_days = 7
+
+    while True:
+        try:
+            cutoff = datetime.utcnow() - timedelta(days=retention_days)
+            deleted_generations = 0
+            deleted_files: List[str] = []
+
+            with db_service.get_session() as session:
+                old_generations: List[Generation] = (
+                    session.query(Generation)
+                    .filter(Generation.created_at < cutoff)
+                    .all()
+                )
+
+                if old_generations:
+                    logger.info(
+                        f"[AUTO_CLEANUP] Найдено {len(old_generations)} генераций "
+                        f"старше {retention_days} дней для автоочистки"
+                    )
+
+                for gen in old_generations:
+                    # Удаляем результат из MinIO
+                    if gen.result_path:
+                        if minio_background.delete_image(gen.result_path):
+                            deleted_files.append(gen.result_path)
+
+                    # Удаляем референсы из MinIO по URL, если они больше нигде не используются
+                    if gen.generation_metadata:
+                        ref_urls = gen.generation_metadata.get("reference_image_urls") or []
+                        for url in ref_urls:
+                            if not url:
+                                continue
+
+                            # Проверяем использование в других генерациях
+                            other_gens: List[Generation] = (
+                                session.query(Generation)
+                                .filter(Generation.id != gen.id)
+                                .filter(Generation.generation_metadata.isnot(None))
+                                .all()
+                            )
+                            url_used_elsewhere = False
+                            for other in other_gens:
+                                other_urls = []
+                                if other.generation_metadata:
+                                    other_urls = other.generation_metadata.get("reference_image_urls") or []
+                                if url in other_urls:
+                                    url_used_elsewhere = True
+                                    break
+
+                            if url_used_elsewhere:
+                                continue
+
+                            marker = f"/{app_settings.MINIO_BUCKET}/"
+                            idx = url.find(marker)
+                            if idx == -1:
+                                continue
+                            path = url[idx + len(marker) :]
+
+                            if path and minio_background.delete_image(path):
+                                deleted_files.append(path)
+
+                    session.delete(gen)
+                    deleted_generations += 1
+
+                session.commit()
+
+            if deleted_generations or deleted_files:
+                logger.info(
+                    f"[AUTO_CLEANUP] Автоочистка завершена: "
+                    f"удалено генераций={deleted_generations}, файлов в MinIO={len(deleted_files)}"
+                )
+        except Exception as e:
+            logger.error(f"[AUTO_CLEANUP] Ошибка автоочистки: {e}", exc_info=True)
+
+        # Ждём сутки до следующего запуска
+        await asyncio.sleep(24 * 60 * 60)
+
+
+# Инициализация БД и запуск фоновых задач при старте
 @app.on_event("startup")
 async def startup_event():
     """Инициализация при запуске приложения"""
@@ -161,6 +256,13 @@ async def startup_event():
         logger.info("[STARTUP] База данных инициализирована")
     except Exception as e:
         logger.error(f"[STARTUP] Ошибка инициализации БД: {e}")
+    
+    # Запускаем фоновую задачу автоочистки
+    try:
+        asyncio.create_task(auto_cleanup_task())
+        logger.info("[STARTUP] Фоновая задача автоочистки старых генераций запущена")
+    except Exception as e:
+        logger.error(f"[STARTUP] Не удалось запустить фоновую задачу автоочистки: {e}", exc_info=True)
 
 # Health check endpoint (должен быть до статических файлов)
 @app.get("/health")

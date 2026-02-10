@@ -567,12 +567,8 @@ async def list_generations(
                 Generation.user_id == user.user_id
             ).order_by(Generation.created_at.desc()).all()
             
-            logger.info(f"[LIST] Всего генераций для пользователя {user.user_id}: {len(all_generations)}")
-            
             # Применяем limit и offset
             generations = all_generations[offset_val:offset_val+limit_val]
-            
-            logger.info(f"[LIST] Возвращаем {len(generations)} генераций (limit={limit_val}, offset={offset_val})")
             
             result = []
             for gen in generations:
