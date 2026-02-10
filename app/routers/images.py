@@ -2,10 +2,10 @@
 Роутер для генерации изображений через Nano Banana Pro (Replicate API)
 """
 from concurrent.futures import ThreadPoolExecutor
-from typing import Annotated, Optional
+from typing import Annotated, Optional, List
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from starlette.requests import Request
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 import uuid
 from app.models.schemas import ImageGenerationRequest, ImageGenerationResponse, ImageResponse
@@ -24,6 +24,27 @@ executor = ThreadPoolExecutor(max_workers=settings.MAX_WORKERS)
 
 router = APIRouter(prefix="/images", tags=["images"])
 minio = MinioService()
+
+
+def _extract_minio_path_from_url(url: str, bucket: str) -> Optional[str]:
+    """
+    Вспомогательная функция: из публичного URL MinIO достает путь объекта внутри бакета.
+    Ожидаемый формат:
+      {PUBLIC_URL}/{bucket}/{object_path}
+    Возвращает object_path или None, если разобрать не удалось.
+    """
+    try:
+        if not url:
+            return None
+
+        # Ищем подстроку "/{bucket}/"
+        marker = f"/{bucket}/"
+        idx = url.find(marker)
+        if idx == -1:
+            return None
+        return url[idx + len(marker) :]
+    except Exception:
+        return None
 
 def get_user_replicate_key(user_id: int, api_key_from_request: Optional[str] = None) -> str:
     """
@@ -541,16 +562,6 @@ async def list_generations(
             # Получаем общее количество генераций пользователя
             total_count = session.query(Generation).filter(Generation.user_id == user.user_id).count()
             
-            # Получаем сводку по всем пользователям (только раз в 10 запросов для уменьшения логов)
-            import random
-            if random.randint(1, 10) == 1:  # 10% вероятность логирования сводки
-                all_users = session.query(User).all()
-                user_summary = []
-                for u in all_users:
-                    user_gen_count = session.query(Generation).filter(Generation.user_id == u.id).count()
-                    user_summary.append(f"user_{u.id}({u.username}): {user_gen_count} ген.")
-                logger.info(f"[LIST] Сводка по пользователям: {', '.join(user_summary)}")
-            
             # Получаем все генерации пользователя
             all_generations = session.query(Generation).filter(
                 Generation.user_id == user.user_id
@@ -590,12 +601,14 @@ async def list_generations(
                     error_message=error_msg  # None для старых генераций без ошибок
                 ))
             
-            # Логируем только сводку, а не каждую генерацию
-            completed_count = sum(1 for resp in result if resp.status == 'completed')
-            failed_count = sum(1 for resp in result if resp.status == 'failed')
+            # Логируем только активные процессы (running/pending), чтобы не засорять логи
             running_count = sum(1 for resp in result if resp.status == 'running')
             pending_count = sum(1 for resp in result if resp.status == 'pending')
-            logger.info(f"[LIST] Сводка для пользователя {user.user_id}: всего={len(result)}, завершено={completed_count}, ошибок={failed_count}, выполняется={running_count}, в очереди={pending_count}")
+            if running_count or pending_count:
+                logger.info(
+                    f"[LIST] Активные генерации пользователя {user.user_id}: "
+                    f"выполняется={running_count}, в очереди={pending_count}"
+                )
             
             # Возвращаем результат с метаданными
             from fastapi.responses import JSONResponse
@@ -678,12 +691,96 @@ async def delete_generation(
         if not generation:
             raise HTTPException(status_code=404, detail="Генерация не найдена")
         
-        # Удаляем из MinIO если есть
+        # Удаляем из MinIO результат, если есть
         if generation.result_path:
             minio.delete_image(generation.result_path)
-        
+
         session.delete(generation)
         session.commit()
-        
+
         return {"message": "Генерация удалена"}
+
+
+@router.post("/cleanup")
+async def cleanup_old_generations(
+    user: Annotated[TokenPayload, Depends(auth_service.get_current_user)]
+):
+    """
+    Очистка генераций и связанных изображений старше 7 дней.
+
+    Эндпоинт защищен: выполнять может только админ (is_admin=True).
+    Предполагается, что его будет дергать крон или ручной вызов админа.
+    """
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="Доступ запрещен")
+
+    retention_days = 7
+    cutoff = datetime.utcnow() - timedelta(days=retention_days)
+
+    deleted_count = 0
+    deleted_files: List[str] = []
+
+    from app.config import settings as app_settings
+
+    with db_service.get_session() as session:
+        old_generations: List[Generation] = (
+            session.query(Generation)
+            .filter(Generation.created_at < cutoff)
+            .all()
+        )
+
+        logger.info(
+            f"[CLEANUP] Найдено {len(old_generations)} генераций старше {retention_days} дней для удаления"
+        )
+
+        for gen in old_generations:
+            # Удаляем результат из MinIO
+            if gen.result_path:
+                if minio.delete_image(gen.result_path):
+                    deleted_files.append(gen.result_path)
+            # Удаляем референсы из MinIO (по сохраненным публичным URL),
+            # только если этот URL не используется ни в одной другой генерации.
+            if gen.generation_metadata:
+                ref_urls: List[str] = gen.generation_metadata.get("reference_image_urls") or []
+                for url in ref_urls:
+                    if not url:
+                        continue
+                    # Проверяем, есть ли другие генерации (кроме текущей),
+                    # у которых в metadata присутствует этот же URL
+                    other_gens: List[Generation] = (
+                        session.query(Generation)
+                        .filter(Generation.id != gen.id)
+                        .filter(Generation.generation_metadata.isnot(None))
+                        .all()
+                    )
+                    url_used_elsewhere = False
+                    for other in other_gens:
+                        other_urls = []
+                        if other.generation_metadata:
+                            other_urls = other.generation_metadata.get("reference_image_urls") or []
+                        if url in other_urls:
+                            url_used_elsewhere = True
+                            break
+
+                    if url_used_elsewhere:
+                        continue
+
+                    path = _extract_minio_path_from_url(url, app_settings.MINIO_BUCKET)
+                    if path and minio.delete_image(path):
+                        deleted_files.append(path)
+
+            session.delete(gen)
+            deleted_count += 1
+
+        session.commit()
+
+    logger.info(
+        f"[CLEANUP] Удалено генераций: {deleted_count}, файлов в MinIO: {len(deleted_files)}"
+    )
+
+    return {
+        "deleted_generations": deleted_count,
+        "deleted_files": deleted_files,
+        "retention_days": retention_days,
+    }
 

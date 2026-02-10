@@ -9,6 +9,8 @@ from typing import Optional, List, Dict, Any
 from PIL import Image
 import time
 
+from replicate.exceptions import ModelError
+
 logger = logging.getLogger(__name__)
 
 class ReplicateService:
@@ -16,6 +18,10 @@ class ReplicateService:
     
     MODEL_NAME = "google/nano-banana-pro"
     TIMEOUT = 900  # 15 минут (увеличено для сложных генераций)
+
+    # Параметры повторных попыток при временных ошибках (E003 / 429)
+    MAX_RETRIES = 3
+    RETRY_DELAY_SECONDS = 5
     
     # Лимиты Nano Banana Pro API для референсных изображений
     MAX_REF_DIMENSION = 2048  # Максимальный размер по большей стороне
@@ -327,11 +333,51 @@ class ReplicateService:
                 input_params["prompt"] = enhanced_prompt
                 logger.info(f"[REPLICATE] Промпт улучшен для {num_refs} референсных изображений")
             
-            # Вызов API
+            # Вызов API с повторными попытками при временных ошибках (rate limit / high demand)
             start_time = time.time()
             logger.info("[REPLICATE] Отправка запроса в Replicate API...")
-            
-            output = self.client.run(self.MODEL_NAME, input=input_params)
+
+            last_error: Optional[Exception] = None
+            output = None
+
+            for attempt in range(1, self.MAX_RETRIES + 1):
+                try:
+                    logger.info(f"[REPLICATE] Попытка {attempt}/{self.MAX_RETRIES} вызова модели...")
+                    output = self.client.run(self.MODEL_NAME, input=input_params)
+                    # Успех – выходим из цикла
+                    last_error = None
+                    break
+                except ModelError as me:
+                    error_text = str(me) if me else ""
+                    # Проверяем на E003 / 429
+                    is_rate_limit = (
+                        "E003" in error_text
+                        or "high demand" in error_text
+                        or "429" in error_text
+                        or "ModelRateLimitError" in error_text
+                    )
+
+                    if is_rate_limit and attempt < self.MAX_RETRIES:
+                        last_error = me
+                        logger.warning(
+                            f"[REPLICATE] Временная ошибка модели (rate limit / high demand): "
+                            f\"{error_text}\". Попытка {attempt}/{self.MAX_RETRIES}, "
+                            f"ждем {self.RETRY_DELAY_SECONDS} секунд и пробуем ещё раз..."
+                        )
+                        time.sleep(self.RETRY_DELAY_SECONDS)
+                        continue
+
+                    # Либо не rate-limit ошибка, либо исчерпали попытки – пробрасываем
+                    last_error = me
+                    raise
+                except Exception as e:
+                    # Другие ошибки не считаем временными – пробрасываем сразу
+                    last_error = e
+                    raise
+
+            if output is None and last_error is not None:
+                # На всякий случай, если по какой-то причине не вышли через raise
+                raise last_error
             
             # Обработка результата
             result_data = None
