@@ -36,8 +36,9 @@ class Settings(BaseSettings):
     REPLICATE_API_TOKEN: str = Field("", env="REPLICATE_API_TOKEN")
     
     # Performance
-    MAX_WORKERS: int = Field(3, env="MAX_WORKERS")  # Максимум одновременных генераций
-    MAX_CONCURRENT_GENERATIONS: int = Field(3, env="MAX_CONCURRENT_GENERATIONS")
+    # По умолчанию запускаем только одну генерацию одновременно, чтобы уменьшить вероятность E003/rate-limit
+    MAX_WORKERS: int = Field(1, env="MAX_WORKERS")  # Максимум одновременных воркеров
+    MAX_CONCURRENT_GENERATIONS: int = Field(1, env="MAX_CONCURRENT_GENERATIONS")  # Лимит активных задач на пользователя
     
     # CORS (для продакшена укажите конкретные домены)
     CORS_ORIGINS: str = Field("*", env="CORS_ORIGINS")

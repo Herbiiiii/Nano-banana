@@ -105,7 +105,8 @@ services:
       - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
       - ALGORITHM=HS256
       - REPLICATE_API_TOKEN=${REPLICATE_API_TOKEN:-}
-      - MAX_WORKERS=${MAX_WORKERS:-3}
+      - MAX_WORKERS=${MAX_WORKERS:-1}
+      - MAX_CONCURRENT_GENERATIONS=${MAX_CONCURRENT_GENERATIONS:-1}
       - CORS_ORIGINS=${CORS_ORIGINS:-*}
       - API_URL=${API_URL:-http://localhost:8000}
       - MINIO_CONSOLE_URL=${MINIO_CONSOLE_URL:-http://localhost:9001}
