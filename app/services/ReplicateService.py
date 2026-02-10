@@ -360,8 +360,8 @@ class ReplicateService:
                     if is_rate_limit and attempt < self.MAX_RETRIES:
                         last_error = me
                         logger.warning(
-                            f"[REPLICATE] Временная ошибка модели (rate limit / high demand): "
-                            f\"{error_text}\". Попытка {attempt}/{self.MAX_RETRIES}, "
+                            "[REPLICATE] Временная ошибка модели (rate limit / high demand): "
+                            f"\"{error_text}\". Попытка {attempt}/{self.MAX_RETRIES}, "
                             f"ждем {self.RETRY_DELAY_SECONDS} секунд и пробуем ещё раз..."
                         )
                         time.sleep(self.RETRY_DELAY_SECONDS)
