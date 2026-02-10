@@ -22,6 +22,9 @@ logger = logging.getLogger(__name__)
 # Глобальный пул воркеров для обработки генераций
 executor = ThreadPoolExecutor(max_workers=settings.MAX_WORKERS)
 
+# Максимальное количество повторных попыток генерации при временных ошибках (E003 / 429)
+MAX_GENERATION_RETRIES = 3
+
 router = APIRouter(prefix="/images", tags=["images"])
 minio = MinioService()
 
@@ -269,41 +272,71 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                 generation.completed_at = datetime.utcnow()
             else:
                 # Генерация не удалась - сохраняем ошибку
-                generation.status = "failed"
-                generation.completed_at = datetime.utcnow()
-                # Сохраняем ошибку в generation_metadata
+                # Сначала пытаемся понять, можно ли повторить генерацию (временная ошибка типа E003/429)
                 if not generation.generation_metadata:
                     generation.generation_metadata = {}
-                
-                # Извлекаем ошибку из result
+
                 error_message = result.get('error')
-                
-                # Если ошибка не указана или пустая, проверяем другие возможные поля
                 if not error_message or (isinstance(error_message, str) and error_message.strip() == ''):
                     error_message = result.get('message') or result.get('detail') or result.get('error_message')
-                
-                # Если всё ещё нет ошибки, используем дефолтное сообщение
                 if not error_message or (isinstance(error_message, str) and error_message.strip() == ''):
                     error_message = 'Неизвестная ошибка генерации'
-                    logger.warning(f"[GENERATION] Генерация {generation_id} завершена с ошибкой, но error_message отсутствует в result. Result keys: {list(result.keys())}")
-                
-                # Убеждаемся что error_message - строка
+
                 if not isinstance(error_message, str):
                     error_message = str(error_message)
-                
+
+                # Проверяем, является ли ошибка временной (rate limit / high demand)
+                lower_err = error_message.lower()
+                is_retryable = (
+                    "e003" in lower_err
+                    or "high demand" in lower_err
+                    or "429" in lower_err
+                    or "ratelimit" in lower_err
+                )
+
+                current_retries = generation.generation_metadata.get("retry_count", 0)
+
+                if is_retryable and current_retries < MAX_GENERATION_RETRIES:
+                    # Увеличиваем счетчик попыток и ставим задачу обратно в очередь
+                    generation.generation_metadata["retry_count"] = current_retries + 1
+                    generation.status = "pending"
+                    generation.completed_at = None
+
+                    from sqlalchemy.orm.attributes import flag_modified
+                    flag_modified(generation, "generation_metadata")
+
+                    session.commit()
+
+                    logger.warning(
+                        f"[GENERATION] Генерация {generation_id} получила временную ошибку "
+                        f"и будет автоматически повторена ({current_retries + 1}/{MAX_GENERATION_RETRIES}): "
+                        f"{error_message[:200]}"
+                    )
+
+                    # Повторно отправляем в executor с теми же входными данными
+                    executor.submit(process_generation_async, generation_id, user_id, request_data)
+                    return
+
+                # Если ошибка не временная или исчерпаны попытки — помечаем как failed
+                generation.status = "failed"
+                generation.completed_at = datetime.utcnow()
+
                 # Обрезаем слишком длинные сообщения об ошибках (максимум 2000 символов)
                 if len(error_message) > 2000:
                     error_message = error_message[:2000] + "... (сообщение обрезано)"
-                
+
                 generation.generation_metadata['error'] = error_message
-                
+
                 # ВАЖНО: Уведомляем SQLAlchemy об изменении JSON поля
                 from sqlalchemy.orm.attributes import flag_modified
                 flag_modified(generation, "generation_metadata")
-                
-                logger.error(f"[GENERATION] Генерация {generation_id} завершена с ошибкой. Сохраняем error_message: {error_message[:200]}...")
+
+                logger.error(
+                    f"[GENERATION] Генерация {generation_id} завершена с ошибкой "
+                    f"после {current_retries} попыток. error_message: {error_message[:200]}..."
+                )
                 logger.info(f"[GENERATION] generation_metadata перед commit: {generation.generation_metadata}")
-                
+
                 # Сохраняем ошибку в файл
                 from app.services.ErrorLogger import save_error_to_file
                 error_data = {

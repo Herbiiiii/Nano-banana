@@ -161,20 +161,26 @@ async def global_exception_handler(request: Request, exc: Exception):
         content={"detail": "Внутренняя ошибка сервера"}
     )
 
-# Фоновая задача автоочистки старых генераций и связанных файлов
+# Фоновая задача автоочистки старых генераций и связанных файлов,
+# а также сброса "зависших" генераций
 async def auto_cleanup_task():
     """
-    Периодически (раз в сутки) удаляет генерации и файлы старше 7 дней.
+    Периодически удаляет генерации и файлы старше 7 дней
+    и помечает слишком долго висящие генерации как завершившиеся с ошибкой.
     """
     # Небольшая задержка после старта приложения, чтобы всё инициализировалось
     await asyncio.sleep(60)
     retention_days = 7
+    # Порог для "зависших" генераций (если висят дольше этого времени в статусе running/pending)
+    stuck_minutes = 20
 
     while True:
         try:
             cutoff = datetime.utcnow() - timedelta(days=retention_days)
+            stuck_cutoff = datetime.utcnow() - timedelta(minutes=stuck_minutes)
             deleted_generations = 0
             deleted_files: List[str] = []
+            fixed_stuck = 0
 
             with db_service.get_session() as session:
                 old_generations: List[Generation] = (
@@ -189,6 +195,7 @@ async def auto_cleanup_task():
                         f"старше {retention_days} дней для автоочистки"
                     )
 
+                # Удаляем действительно старые генерации и их файлы
                 for gen in old_generations:
                     # Удаляем результат из MinIO
                     if gen.result_path:
@@ -233,18 +240,40 @@ async def auto_cleanup_task():
                     session.delete(gen)
                     deleted_generations += 1
 
+                # Дополнительно: помечаем "зависшие" генерации как failed,
+                # чтобы они не висели бесконечно в статусе running/pending
+                stuck_generations: List[Generation] = (
+                    session.query(Generation)
+                    .filter(Generation.created_at < stuck_cutoff)
+                    .filter(Generation.status.in_(["running", "pending"]))
+                    .all()
+                )
+
+                for gen in stuck_generations:
+                    gen.status = "failed"
+                    gen.completed_at = datetime.utcnow()
+                    if not gen.generation_metadata:
+                        gen.generation_metadata = {}
+                    gen.generation_metadata["error"] = (
+                        f"Генерация была автоматически помечена как неудачная, "
+                        f"так как выполнялась дольше {stuck_minutes} минут без завершения."
+                    )
+                    fixed_stuck += 1
+
                 session.commit()
 
-            if deleted_generations or deleted_files:
+            if deleted_generations or deleted_files or fixed_stuck:
                 logger.info(
                     f"[AUTO_CLEANUP] Автоочистка завершена: "
-                    f"удалено генераций={deleted_generations}, файлов в MinIO={len(deleted_files)}"
+                    f"удалено генераций={deleted_generations}, файлов в MinIO={len(deleted_files)}, "
+                    f\"сброшено зависших генераций={fixed_stuck}\"
                 )
         except Exception as e:
             logger.error(f"[AUTO_CLEANUP] Ошибка автоочистки: {e}", exc_info=True)
 
-        # Ждём сутки до следующего запуска
-        await asyncio.sleep(24 * 60 * 60)
+        # Запускаем проверку чаще (каждые 5 минут),
+        # чтобы оперативно сбрасывать зависшие генерации и чуть чаще чистить старые.
+        await asyncio.sleep(5 * 60)
 
 
 # Инициализация БД и запуск фоновых задач при старте
@@ -254,6 +283,31 @@ async def startup_event():
     try:
         db_service.create_tables()
         logger.info("[STARTUP] База данных инициализирована")
+
+        # Сбрасываем "зависшие" генерации (running/pending), которые могли остаться после рестарта
+        from app.models.base import Generation
+        from sqlalchemy.orm import Session
+
+        with db_service.get_session() as session:  # type: Session
+            stuck_gens = (
+                session.query(Generation)
+                .filter(Generation.status.in_(["running", "pending"]))
+                .all()
+            )
+            if stuck_gens:
+                now = datetime.utcnow()
+                for gen in stuck_gens:
+                    gen.status = "failed"
+                    gen.completed_at = now
+                    if not gen.generation_metadata:
+                        gen.generation_metadata = {}
+                    gen.generation_metadata["error"] = (
+                        "Генерация была помечена как 'failed' после перезапуска сервера "
+                        "или из-за зависшего состояния."
+                    )
+                logger.info(
+                    f"[STARTUP] Обнаружено и сброшено зависших генераций: {len(stuck_gens)}"
+                )
     except Exception as e:
         logger.error(f"[STARTUP] Ошибка инициализации БД: {e}")
     
