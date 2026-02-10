@@ -266,7 +266,7 @@ async def auto_cleanup_task():
                 logger.info(
                     f"[AUTO_CLEANUP] Автоочистка завершена: "
                     f"удалено генераций={deleted_generations}, файлов в MinIO={len(deleted_files)}, "
-                    f\"сброшено зависших генераций={fixed_stuck}\"
+                    f"сброшено зависших генераций={fixed_stuck}"
                 )
         except Exception as e:
             logger.error(f"[AUTO_CLEANUP] Ошибка автоочистки: {e}", exc_info=True)
