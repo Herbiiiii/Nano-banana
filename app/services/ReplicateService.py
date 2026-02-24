@@ -25,15 +25,10 @@ class ReplicateService:
             "display_name": "Nano Banana Pro",
             "description": "Высококачественная модель для генерации изображений (Pro версия)"
         },
-        "nano-banana": {
-            "name": "google/nano-banana",
-            "display_name": "Nano Banana",
-            "description": "Базовая версия Nano Banana для генерации изображений"
-        },
-        "nano-banana-2.5": {
-            "name": "google/nano-banana-2.5",
-            "display_name": "Nano Banana 2.5",
-            "description": "Версия 2.5 Nano Banana для генерации изображений"
+        "gemini-2.5-flash-image": {
+            "name": "google/gemini-2.5-flash-image",
+            "display_name": "Gemini 2.5 Flash Image",
+            "description": "Быстрая модель для генерации и редактирования изображений с поддержкой мультимодальности"
         }
     }
     
