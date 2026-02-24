@@ -55,6 +55,7 @@ class ImageGenerationRequest(BaseModel):
     seed: Optional[int] = None
     reference_images: Optional[List[str]] = None  # URLs или base64 изображений
     api_key: Optional[str] = None  # API ключ Replicate (не сохраняется в БД, используется только в сессии)
+    model_name: Optional[str] = None  # Имя модели (например, "nano-banana-pro", "gemini-2.5-flash-image")
 
 class ImageGenerationResponse(BaseModel):
     status: str
@@ -74,6 +75,7 @@ class ImageResponse(BaseModel):
     status: str
     created_at: datetime
     error_message: Optional[str] = None
+    model_name: Optional[str] = None  # Модель, использованная для генерации
     
     class Config:
         from_attributes = True

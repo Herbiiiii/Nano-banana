@@ -101,6 +101,20 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                 return
             
             try:
+                # Получаем модель из запроса или из БД (для старых записей)
+                model_name = request_data.get('model_name')
+                if not model_name:
+                    # Если модель не указана в запросе, берем из БД
+                    with db_service.get_session() as session:
+                        gen = session.query(Generation).filter(Generation.id == generation_id).first()
+                        if gen and gen.model_name:
+                            model_name = gen.model_name
+                        else:
+                            # Если в БД тоже нет, используем по умолчанию
+                            model_name = "nano-banana-pro"
+                
+                logger.info(f"[GENERATION] Используется модель: {model_name} для генерации {generation_id}")
+                
                 # Генерируем изображение
                 result = replicate_service.generate_image(
                     prompt=request_data['prompt'],
@@ -110,7 +124,8 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                     guidance_scale=request_data.get('guidance_scale', 7.5),
                     num_inference_steps=request_data.get('num_inference_steps', 50),
                     seed=request_data.get('seed'),
-                    reference_images=request_data.get('reference_images')
+                    reference_images=request_data.get('reference_images'),
+                    model_name=model_name
                 )
             except Exception as gen_error:
                 # Ошибка при генерации (например, неправильный API ключ, таймаут и т.д.)
@@ -434,19 +449,27 @@ async def generate_image(
         
         # Создаем запись в БД
         with db_service.get_session() as session:
-            # Сначала создаем запись генерации для получения ID
+            # Определяем модель для сохранения (по умолчанию "nano-banana-pro")
+            selected_model = request.model_name if request.model_name else "nano-banana-pro"
+            logger.info(f"[GENERATION] Выбрана модель: {selected_model}")
+            
+            # Сохраняем выбранную модель в метаданных (для обратной совместимости)
+            generation_metadata = {}
+            generation_metadata['model_name'] = selected_model
+            
             generation = Generation(
                 user_id=user.user_id,
                 prompt=request.prompt,
                 negative_prompt=request.negative_prompt,
                 generation_mode=request.generation_mode,
+                model_name=selected_model,  # Сохраняем в отдельное поле
                 resolution=request.resolution,
                 aspect_ratio=request.aspect_ratio,
                 guidance_scale=request.guidance_scale,
                 num_inference_steps=request.num_inference_steps,
                 seed=request.seed,
                 status="pending",
-                generation_metadata={}
+                generation_metadata=generation_metadata
             )
             session.add(generation)
             session.commit()
@@ -530,6 +553,11 @@ async def generate_image(
                     generation.generation_metadata = {}
                 generation.generation_metadata['reference_images_count'] = len(request.reference_images)
                 generation.generation_metadata['reference_image_urls'] = reference_image_urls
+                # Модель уже сохранена в отдельное поле model_name, но для совместимости сохраняем и в metadata
+                if not generation.generation_metadata.get('model_name'):
+                    generation.generation_metadata['model_name'] = generation.model_name or "nano-banana-pro"
+                from sqlalchemy.orm.attributes import flag_modified
+                flag_modified(generation, "generation_metadata")
                 session.commit()
                 logger.info(f"[GENERATION] Референсы сохранены для генерации {generation_id}: {len(reference_image_urls)} URL")
         
@@ -616,6 +644,14 @@ async def list_generations(
                 elif gen.status == 'failed':
                     logger.warning(f"[LIST] Генерация {gen.id} имеет статус 'failed', но generation_metadata отсутствует")
                 
+                # Извлекаем model_name из поля или метаданных (для обратной совместимости)
+                model_name = gen.model_name
+                if not model_name and gen.generation_metadata:
+                    model_name = gen.generation_metadata.get('model_name')
+                # Если модель все еще не найдена, используем по умолчанию
+                if not model_name:
+                    model_name = "nano-banana-pro"
+                
                 result.append(ImageResponse(
                     id=gen.id,
                     user_id=gen.user_id,
@@ -627,7 +663,8 @@ async def list_generations(
                     result_url=gen.result_url,
                     status=gen.status,
                     created_at=gen.created_at,
-                    error_message=error_msg  # None для старых генераций без ошибок
+                    error_message=error_msg,  # None для старых генераций без ошибок
+                    model_name=model_name
                 ))
             
             # Логируем только активные процессы (running/pending), чтобы не засорять логи
@@ -689,6 +726,12 @@ async def get_generation_full(
         if not generation:
             raise HTTPException(status_code=404, detail="Генерация не найдена")
         
+        metadata = generation.generation_metadata or {}
+        # Получаем model_name из поля или метаданных (для обратной совместимости)
+        model_name = generation.model_name
+        if not model_name:
+            model_name = metadata.get("model_name", "nano-banana-pro")
+        
         return {
             "id": generation.id,
             "prompt": generation.prompt,
@@ -699,11 +742,28 @@ async def get_generation_full(
             "guidance_scale": generation.guidance_scale,
             "num_inference_steps": generation.num_inference_steps,
             "seed": generation.seed,
-            "reference_images": generation.generation_metadata.get("reference_image_urls", []) if generation.generation_metadata else [],
+            "model_name": model_name,
+            "reference_images": metadata.get("reference_image_urls", []),
             "result_url": generation.result_url,
             "status": generation.status,
-            "error_message": generation.generation_metadata.get('error') if generation.generation_metadata else None
+            "error_message": metadata.get('error')
         }
+
+@router.get("/models")
+async def get_available_models():
+    """Получение списка доступных моделей для генерации"""
+    from app.services.ReplicateService import ReplicateService
+    models = {}
+    for key, model_info in ReplicateService.AVAILABLE_MODELS.items():
+        models[key] = {
+            "display_name": model_info["display_name"],
+            "description": model_info["description"],
+            "name": model_info["name"]
+        }
+    return {
+        "models": models,
+        "default_model": ReplicateService.DEFAULT_MODEL
+    }
 
 @router.delete("/{generation_id}")
 async def delete_generation(

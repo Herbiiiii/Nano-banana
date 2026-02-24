@@ -34,6 +34,7 @@ class Generation(Base):
     enhanced_prompt = Column(Text, nullable=True)
     negative_prompt = Column(Text, nullable=True)
     generation_mode = Column(String, nullable=False)  # "text-to-image" или "image-to-image"
+    model_name = Column(String, nullable=True)  # Имя модели (например, "nano-banana-pro", "nano-banana", "nano-banana-2.5")
     resolution = Column(String, default="1K")
     aspect_ratio = Column(String, default="1:1")
     guidance_scale = Column(Float, default=7.5)

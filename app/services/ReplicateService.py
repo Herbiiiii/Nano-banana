@@ -9,14 +9,37 @@ from typing import Optional, List, Dict, Any
 from PIL import Image
 import time
 
-from replicate.exceptions import ModelError
+from replicate.exceptions import ModelError, ReplicateError
+import re
 
 logger = logging.getLogger(__name__)
 
 class ReplicateService:
     """Сервис для генерации изображений через Replicate API"""
     
-    MODEL_NAME = "google/nano-banana-pro"
+    # Список доступных моделей Nano Banana (все используют один API ключ r8)
+    # Все версии Nano Banana доступны по одному ключу
+    AVAILABLE_MODELS = {
+        "nano-banana-pro": {
+            "name": "google/nano-banana-pro",
+            "display_name": "Nano Banana Pro",
+            "description": "Высококачественная модель для генерации изображений (Pro версия)"
+        },
+        "nano-banana": {
+            "name": "google/nano-banana",
+            "display_name": "Nano Banana",
+            "description": "Базовая версия Nano Banana для генерации изображений"
+        },
+        "nano-banana-2.5": {
+            "name": "google/nano-banana-2.5",
+            "display_name": "Nano Banana 2.5",
+            "description": "Версия 2.5 Nano Banana для генерации изображений"
+        }
+    }
+    
+    # Модель по умолчанию
+    DEFAULT_MODEL = "nano-banana-pro"
+    MODEL_NAME = "google/nano-banana-pro"  # Для обратной совместимости
     TIMEOUT = 900  # 15 минут (увеличено для сложных генераций)
 
     # Параметры повторных попыток при временных ошибках (E003 / 429)
@@ -151,10 +174,15 @@ class ReplicateService:
         guidance_scale: float = 7.5,
         num_inference_steps: int = 50,
         seed: Optional[int] = None,
-        reference_images: Optional[List] = None
+        reference_images: Optional[List] = None,
+        model_name: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Генерирует изображение через Nano Banana Pro
+        Генерирует изображение через выбранную модель Replicate
+        
+        Args:
+            model_name: Имя модели из AVAILABLE_MODELS (например, "nano-banana-pro", "gemini-2.5-flash-image")
+                       Если не указано, используется модель по умолчанию
         
         Returns:
             dict: {
@@ -165,15 +193,33 @@ class ReplicateService:
             }
         """
         try:
-            logger.info(f"[REPLICATE] Начало генерации. Промпт: {prompt[:100]}...")
-            logger.info(f"[REPLICATE] Параметры: resolution={resolution}, aspect_ratio={aspect_ratio}")
+            # Определяем модель для использования
+            if model_name and model_name in self.AVAILABLE_MODELS:
+                selected_model = self.AVAILABLE_MODELS[model_name]["name"]
+                logger.info(f"[REPLICATE] Используется модель: {model_name} ({selected_model})")
+            elif model_name:
+                # Если указана модель, которой нет в списке, пробуем использовать как есть (для кастомных моделей)
+                selected_model = model_name
+                logger.warning(f"[REPLICATE] Модель '{model_name}' не найдена в списке доступных, используется как есть")
+            else:
+                selected_model = self.AVAILABLE_MODELS[self.DEFAULT_MODEL]["name"]
+                logger.info(f"[REPLICATE] Используется модель по умолчанию: {self.DEFAULT_MODEL} ({selected_model})")
             
-            # Подготовка параметров
+            logger.info(f"[REPLICATE] Начало генерации. Промпт: {prompt[:100]}...")
+            logger.info(f"[REPLICATE] Параметры: resolution={resolution}, aspect_ratio={aspect_ratio}, model={selected_model}")
+            
+            # Определяем, какая модель используется (для адаптации параметров)
+            current_model_key = model_name if model_name and model_name in self.AVAILABLE_MODELS else self.DEFAULT_MODEL
+            
+            # Подготовка параметров (базовые параметры для всех моделей)
             input_params = {
-                "prompt": prompt,
-                "resolution": resolution,
-                "aspect_ratio": aspect_ratio
+                "prompt": prompt
             }
+            
+            # Добавляем специфичные параметры для моделей Nano Banana
+            # Все модели Nano Banana поддерживают resolution и aspect_ratio
+            input_params["resolution"] = resolution
+            input_params["aspect_ratio"] = aspect_ratio
             
             # Добавляем опциональные параметры
             if negative_prompt:
@@ -235,6 +281,7 @@ class ReplicateService:
                         continue
                 
                 if processed_images:
+                    # Все модели Nano Banana используют image_input для референсных изображений
                     input_params["image_input"] = processed_images
                     logger.info(f"[REPLICATE] Загружено {len(processed_images)} референсных изображений в порядке: 1-{len(processed_images)}")
                 else:
@@ -342,8 +389,8 @@ class ReplicateService:
 
             for attempt in range(1, self.MAX_RETRIES + 1):
                 try:
-                    logger.info(f"[REPLICATE] Попытка {attempt}/{self.MAX_RETRIES} вызова модели...")
-                    output = self.client.run(self.MODEL_NAME, input=input_params)
+                    logger.info(f"[REPLICATE] Попытка {attempt}/{self.MAX_RETRIES} вызова модели {selected_model}...")
+                    output = self.client.run(selected_model, input=input_params)
                     # Успех – выходим из цикла
                     last_error = None
                     break

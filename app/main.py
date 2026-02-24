@@ -283,6 +283,35 @@ async def startup_event():
     try:
         db_service.create_tables()
         logger.info("[STARTUP] База данных инициализирована")
+        
+        # Миграция: проставляем model_name="nano-banana-pro" для старых записей
+        try:
+            with db_service.get_session() as session:
+                from app.models.base import Generation
+                from sqlalchemy import update
+                
+                # Обновляем все генерации без model_name
+                result = session.execute(
+                    update(Generation)
+                    .where(Generation.model_name.is_(None))
+                    .values(model_name="nano-banana-pro")
+                )
+                updated_count = result.rowcount
+                
+                if updated_count > 0:
+                    # Также обновляем metadata для обратной совместимости
+                    generations_to_update = session.query(Generation).filter(
+                        Generation.model_name == "nano-banana-pro",
+                        Generation.generation_metadata.is_(None)
+                    ).all()
+                    
+                    for gen in generations_to_update:
+                        gen.generation_metadata = {"model_name": "nano-banana-pro"}
+                    
+                    session.commit()
+                    logger.info(f"[STARTUP] Миграция: обновлено {updated_count} генераций с model_name='nano-banana-pro'")
+        except Exception as migration_error:
+            logger.warning(f"[STARTUP] Ошибка при миграции model_name (не критично): {migration_error}")
 
         # Сбрасываем "зависшие" генерации (running/pending), которые могли остаться после рестарта
         from app.models.base import Generation
