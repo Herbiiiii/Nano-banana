@@ -85,9 +85,42 @@ class DBService:
         try:
             self.Base.metadata.create_all(bind=self.engine)
             logger.info("Database tables created successfully")
+            
+            # Миграция: добавляем колонку model_name если её нет
+            self._migrate_add_model_name_column()
         except Exception as e:
             logger.error(f"Failed to create tables: {str(e)}")
             raise
+    
+    def _migrate_add_model_name_column(self):
+        """Добавляет колонку model_name в таблицу generations если её нет"""
+        try:
+            from sqlalchemy import text, inspect
+            
+            inspector = inspect(self.engine)
+            
+            # Проверяем, существует ли таблица
+            if 'generations' not in inspector.get_table_names():
+                logger.debug("[MIGRATION] Таблица generations не существует, пропускаем миграцию")
+                return
+            
+            columns = [col['name'] for col in inspector.get_columns('generations')]
+            
+            if 'model_name' not in columns:
+                logger.info("[MIGRATION] Добавление колонки model_name в таблицу generations...")
+                with self.engine.begin() as conn:  # begin() автоматически делает commit
+                    # Добавляем колонку
+                    conn.execute(text("ALTER TABLE generations ADD COLUMN model_name VARCHAR"))
+                    
+                    # Проставляем значение по умолчанию для существующих записей
+                    conn.execute(text("UPDATE generations SET model_name = 'nano-banana-pro' WHERE model_name IS NULL"))
+                    
+                logger.info("[MIGRATION] Колонка model_name успешно добавлена")
+            else:
+                logger.debug("[MIGRATION] Колонка model_name уже существует")
+        except Exception as e:
+            logger.warning(f"[MIGRATION] Ошибка при добавлении колонки model_name (не критично): {e}")
+            # Не пробрасываем ошибку, чтобы не блокировать запуск приложения
 
 # Инициализация сервиса
 db_service = DBService()

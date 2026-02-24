@@ -76,6 +76,38 @@ function removeApiKey() {
     return setApiKey(null);
 }
 
+// Функции для работы с выбранной моделью
+function getSelectedModel() {
+    const storage = getStorage();
+    if (!storage) return 'nano-banana-pro'; // Значение по умолчанию
+    try {
+        return storage.getItem('selectedModel') || 'nano-banana-pro';
+    } catch (e) {
+        console.error('[STORAGE] Ошибка чтения модели:', e);
+        return 'nano-banana-pro';
+    }
+}
+
+function setSelectedModel(modelName) {
+    const storage = getStorage();
+    if (!storage) {
+        console.error('[STORAGE] Хранилище недоступно, модель не может быть сохранена');
+        return false;
+    }
+    try {
+        if (modelName) {
+            storage.setItem('selectedModel', modelName);
+            console.log('[STORAGE] Модель сохранена:', modelName);
+        } else {
+            storage.removeItem('selectedModel');
+        }
+        return true;
+    } catch (e) {
+        console.error('[STORAGE] Ошибка сохранения модели:', e);
+        return false;
+    }
+}
+
 // Обработка файла референса (используется и для загрузки, и для paste)
 function processReferenceFile(file) {
     // Валидация типа файла
@@ -686,6 +718,22 @@ document.addEventListener('DOMContentLoaded', () => {
         console.warn('[INIT] API ключ не найден. Пользователь должен ввести ключ в настройках.');
     }
     
+    // Восстанавливаем выбранную модель из localStorage
+    const savedModel = getSelectedModel();
+    const modelSelect = document.getElementById('modelName');
+    if (modelSelect && savedModel) {
+        modelSelect.value = savedModel;
+        console.log('[INIT] Восстановлена выбранная модель:', savedModel);
+    }
+    
+    // Сохраняем модель при изменении
+    if (modelSelect) {
+        modelSelect.addEventListener('change', (e) => {
+            setSelectedModel(e.target.value);
+            console.log('[MODEL] Модель изменена и сохранена:', e.target.value);
+        });
+    }
+    
     // Обновление галереи каждые 5 секунд (только если есть активные генерации)
     setInterval(async () => {
         if (authToken) {
@@ -1164,10 +1212,15 @@ async function handleGenerate(e) {
 
     try {
         // Подготовка данных
+        const selectedModel = document.getElementById('modelName').value;
+        // Сохраняем выбранную модель
+        setSelectedModel(selectedModel);
+        
         const formData = {
             prompt: document.getElementById('prompt').value,
             negative_prompt: document.getElementById('negativePrompt').value || null,
             generation_mode: document.querySelector('input[name="generationMode"]:checked').value,
+            model_name: selectedModel, // Добавляем выбранную модель
             resolution: document.getElementById('resolution').value,
             num_inference_steps: parseInt(document.getElementById('numSteps').value),
             guidance_scale: parseFloat(document.getElementById('guidance').value),
@@ -1689,15 +1742,8 @@ async function loadGallery() {
             return;
         }
 
-        // Сортируем генерации: сначала активные (pending, running), потом завершенные и ошибки по дате
-        const sortedGenerations = [...generations].sort((a, b) => {
-            const statusOrder = { 'pending': 0, 'running': 1, 'completed': 2, 'failed': 2 }; // completed и failed имеют одинаковый приоритет
-            const aOrder = statusOrder[a.status] || 99;
-            const bOrder = statusOrder[b.status] || 99;
-            if (aOrder !== bOrder) return aOrder - bOrder;
-            // Если статус одинаковый, сортируем по дате (новые сверху)
-            return new Date(b.created_at) - new Date(a.created_at);
-        });
+        // Используем генерации в том порядке, в котором они пришли с сервера (уже отсортированы по дате)
+        const sortedGenerations = [...generations];
         
         // Вычисляем оставшиеся дни для каждой генерации
         const retentionDays = meta?.storage_info?.retention_days || 7;
@@ -2026,6 +2072,12 @@ async function editGeneration(id) {
         document.getElementById('numSteps').value = gen.num_inference_steps || 50;
         document.getElementById('guidance').value = gen.guidance_scale || 7.5;
         document.getElementById('seed').value = gen.seed || '';
+        
+        // Восстанавливаем модель из генерации
+        if (gen.model_name) {
+            document.getElementById('modelName').value = gen.model_name;
+            setSelectedModel(gen.model_name);
+        }
         
         // Очищаем старые референсы перед загрузкой новых
         referenceImages = [];

@@ -112,6 +112,19 @@
                                 </div>
                             </div>
 
+                            <!-- Выбор модели -->
+                            <div class="mb-3">
+                                <label for="modelName" class="form-label">
+                                    <i class="fas fa-brain me-1"></i>Модель генерации
+                                </label>
+                                <select class="form-select" id="modelName">
+                                    <option value="nano-banana-pro" selected>Nano Banana Pro</option>
+                                    <option value="nano-banana">Nano Banana</option>
+                                    <option value="nano-banana-2.5">Nano Banana 2.5</option>
+                                </select>
+                                <small class="form-text text-muted">Выбор сохраняется между сессиями</small>
+                            </div>
+
                             <!-- Референсные изображения -->
                             <div class="mb-3" id="referenceImagesSection" style="display: none;">
                                 <label for="referenceImages" class="form-label">Референсные изображения (до 4)</label>
