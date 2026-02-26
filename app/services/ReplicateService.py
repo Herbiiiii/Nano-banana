@@ -5,7 +5,9 @@ import replicate
 import requests
 import io
 import logging
-from typing import Optional, List, Dict, Any
+import json
+import base64
+from typing import Optional, List, Dict, Any, Tuple
 from PIL import Image
 import time
 
@@ -71,6 +73,17 @@ class ReplicateService:
             "description": "Максимальное качество Imagen 4"
         }
     }
+    
+    # Модели, которые гарантированно возвращают изображение (URL/bytes). Остальные — LLM, могут вернуть JSON;
+    # для них извлечение изображения пробуем через _extract_image_from_response.
+    IMAGE_GENERATION_MODELS = [
+        "nano-banana-pro",
+        "nano-banana",
+        "gemini-2.5-flash-image",
+        "imagen-4",
+        "imagen-4-fast",
+        "imagen-4-ultra",
+    ]
     
     # Модель по умолчанию
     DEFAULT_MODEL = "nano-banana-pro"
@@ -185,6 +198,78 @@ class ReplicateService:
         except Exception as e:
             logger.warning(f"[REPLICATE] Не удалось оптимизировать референс {ref_index}: {e}. Используем оригинал.")
             return image_data  # Возвращаем оригинал если оптимизация не удалась
+    
+    def _extract_image_from_response(self, data: Any) -> Tuple[Optional[str], Optional[bytes]]:
+        """
+        Извлекает URL или bytes изображения из ответа модели (в т.ч. JSON от LLM).
+        Возвращает (result_url, result_data) — что нашлось.
+        """
+        if data is None:
+            return None, None
+        obj = data
+        if isinstance(data, str):
+            data_stripped = data.strip()
+            if data_stripped.startswith(('http://', 'https://')):
+                return data_stripped, None
+            try:
+                obj = json.loads(data)
+            except json.JSONDecodeError:
+                return None, None
+        if not isinstance(obj, dict):
+            return None, None
+        result_url = None
+        result_data = None
+        # Прямые ключи с URL
+        for key in ('url', 'image_url', 'output', 'image', 'file_url', 'src'):
+            val = obj.get(key)
+            if isinstance(val, str) and val.startswith(('http://', 'https://')):
+                result_url = val
+                logger.info(f"[REPLICATE] Из JSON извлечён URL из ключа '{key}'")
+                return result_url, result_data
+        # Base64 в ключах
+        for key in ('image', 'data', 'image_data', 'content', 'b64', 'base64'):
+            val = obj.get(key)
+            if isinstance(val, str):
+                try:
+                    decoded = base64.b64decode(val, validate=True)
+                    if len(decoded) > 100 and (
+                        decoded.startswith(b'\xff\xd8\xff') or
+                        decoded.startswith(b'\x89PNG') or
+                        decoded.startswith(b'RIFF')
+                    ):
+                        result_data = decoded
+                        logger.info(f"[REPLICATE] Из JSON извлечены данные изображения из ключа '{key}' ({len(decoded)} байт)")
+                        return result_url, result_data
+                except Exception:
+                    pass
+        # Вложенные структуры (content/parts как у Gemini)
+        for key in ('content', 'parts', 'candidates', 'outputs'):
+            val = obj.get(key)
+            if isinstance(val, list):
+                for part in val:
+                    if isinstance(part, dict):
+                        u, d = self._extract_image_from_response(part)
+                        if u or d:
+                            return u or result_url, d or result_data
+                    elif isinstance(part, str) and part.startswith(('http://', 'https://')):
+                        return part, result_data
+            elif isinstance(val, dict):
+                u, d = self._extract_image_from_response(val)
+                if u or d:
+                    return u or result_url, d or result_data
+        # action_input иногда содержит URL или base64
+        action_input = obj.get('action_input')
+        if isinstance(action_input, str):
+            if action_input.startswith(('http://', 'https://')):
+                return action_input, None
+            if len(action_input) > 200:
+                try:
+                    decoded = base64.b64decode(action_input, validate=True)
+                    if len(decoded) > 100:
+                        return None, decoded
+                except Exception:
+                    pass
+        return result_url, result_data
     
     def __init__(self, api_token: str):
         """
@@ -467,20 +552,19 @@ class ReplicateService:
             original_output = output  # Сохраняем исходный объект для получения URL
             
             if hasattr(output, '__iter__') and not isinstance(output, (str, bytes)):
-                # Итератор
+                # Итератор — собираем все элементы, т.к. у LLM первый элемент может быть JSON, а изображение — в нём или в следующем
                 logger.info("[REPLICATE] Результат - итератор, получаем элементы...")
-                # Пробуем получить URL из объекта итератора до получения элементов
                 if hasattr(output, 'url'):
                     try:
                         if callable(getattr(output, 'url', None)):
                             result_url = output.url()
                         else:
                             result_url = str(output.url)
-                        logger.info(f"[REPLICATE] URL получен из итератора: {result_url[:100] if result_url else 'URL отсутствует'}...")
+                        if result_url:
+                            logger.info(f"[REPLICATE] URL получен из итератора: {result_url[:100]}...")
                     except Exception as iter_url_error:
                         logger.debug(f"[REPLICATE] Не удалось получить URL из итератора: {iter_url_error}")
                 
-                # Пробуем получить URL из других атрибутов итератора
                 if not result_url:
                     for attr_name in ['uri', 'path', 'href', 'link', 'source', 'file']:
                         if hasattr(output, attr_name):
@@ -496,21 +580,35 @@ class ReplicateService:
                             except Exception as attr_error:
                                 logger.debug(f"[REPLICATE] Не удалось получить URL из атрибута {attr_name}: {attr_error}")
                 
+                items_from_iterator = []
                 for item in output:
                     elapsed = time.time() - start_time
                     if elapsed > self.TIMEOUT:
                         raise TimeoutError(f"Таймаут генерации ({self.TIMEOUT} секунд)")
-                    if item:
-                        logger.info(f"[REPLICATE] Получен результат за {elapsed:.1f} сек, тип: {type(item)}")
-                        # Если item - это строка URL, сохраняем её сразу
-                        if isinstance(item, str) and item.startswith(('http://', 'https://')):
-                            logger.info(f"[REPLICATE] Элемент итератора - строка URL: {item[:100]}...")
-                            result_url = item  # Сохраняем URL сразу
-                        # Если item - это bytes, но у нас уже есть URL, сохраняем его
-                        elif isinstance(item, bytes) and result_url:
-                            logger.info(f"[REPLICATE] Элемент итератора - bytes, URL уже сохранен: {result_url[:100]}...")
-                        output = item
+                    if item is not None:
+                        items_from_iterator.append(item)
+                        logger.info(f"[REPLICATE] Получен элемент за {elapsed:.1f} сек, тип: {type(item).__name__}")
+                
+                # Ищем изображение: сначала URL/bytes, потом из JSON (строка или dict)
+                for item in items_from_iterator:
+                    if isinstance(item, str) and item.startswith(('http://', 'https://')):
+                        result_url = item
+                        logger.info(f"[REPLICATE] Элемент итератора - строка URL: {item[:100]}...")
                         break
+                    if isinstance(item, bytes) and len(item) > 100:
+                        result_data = item
+                        logger.info(f"[REPLICATE] Элемент итератора - bytes, размер: {len(item)}")
+                        break
+                    if isinstance(item, (str, dict)):
+                        u, d = self._extract_image_from_response(item)
+                        if u or d:
+                            if u:
+                                result_url = u
+                            if d:
+                                result_data = d
+                            logger.info("[REPLICATE] Изображение извлечено из JSON/ответа итератора")
+                            break
+                output = items_from_iterator[0] if items_from_iterator else output
             else:
                 elapsed = time.time() - start_time
                 logger.info(f"[REPLICATE] Генерация завершена за {elapsed:.1f} сек")
@@ -596,12 +694,21 @@ class ReplicateService:
                             logger.debug(f"[REPLICATE] Не удалось получить URL из атрибута {attr_name}: {attr_error}")
             
             # Обработка строки (только если результат еще не обработан как bytes)
-            if not result_data and isinstance(output, str):
-                if output.startswith(('http://', 'https://')):
-                    result_url = output
+            if not result_data and not result_url and isinstance(output, str):
+                if output.strip().startswith(('http://', 'https://')):
+                    result_url = output.strip()
                     logger.info(f"[REPLICATE] Результат - строка URL: {result_url[:100]}...")
                 else:
-                    logger.warning(f"[REPLICATE] Результат - строка, но не URL: {output[:200]}")
+                    # LLM могут вернуть JSON с полем url/image/base64 — пробуем извлечь
+                    u, d = self._extract_image_from_response(output)
+                    if u or d:
+                        if u:
+                            result_url = u
+                        if d:
+                            result_data = d
+                        logger.info("[REPLICATE] Изображение извлечено из JSON в ответе модели")
+                    else:
+                        logger.warning(f"[REPLICATE] Результат - строка, но не URL и без изображения в JSON: {output[:200]}")
             
             # Обработка других типов (только если результат еще не обработан)
             if not result_data and not result_url and not isinstance(output, (bytes, str)):

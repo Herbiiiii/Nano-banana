@@ -751,7 +751,7 @@ async def get_generation_full(
 
 @router.get("/models")
 async def get_available_models():
-    """Получение списка доступных моделей для генерации"""
+    """Получение списка доступных моделей для генерации (в т.ч. LLM с извлечением изображения из JSON)."""
     from app.services.ReplicateService import ReplicateService
     models = {}
     for key, model_info in ReplicateService.AVAILABLE_MODELS.items():
