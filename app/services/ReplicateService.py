@@ -39,6 +39,36 @@ class ReplicateService:
             "name": "google/gemini-2.5-flash",
             "display_name": "Gemini 2.5 Flash",
             "description": "Google's hybrid 'thinking' AI model optimized for speed and cost-efficiency"
+        },
+        "gemini-3-pro": {
+            "name": "google/gemini-3-pro",
+            "display_name": "Gemini 3 Pro",
+            "description": "Мощная multimodal LLM (не только картинки)"
+        },
+        "gemini-3-flash": {
+            "name": "google/gemini-3-flash",
+            "display_name": "Gemini 3 Flash",
+            "description": "Быстрый вариант Gemini 3"
+        },
+        "gemini-3.1-pro": {
+            "name": "google/gemini-3.1-pro",
+            "display_name": "Gemini 3.1 Pro",
+            "description": "Новая версия Gemini 3.1 Pro"
+        },
+        "imagen-4": {
+            "name": "google/imagen-4",
+            "display_name": "Imagen 4",
+            "description": "Качественная генерация изображений"
+        },
+        "imagen-4-fast": {
+            "name": "google/imagen-4-fast",
+            "display_name": "Imagen 4 Fast",
+            "description": "Быстрая версия Imagen 4"
+        },
+        "imagen-4-ultra": {
+            "name": "google/imagen-4-ultra",
+            "display_name": "Imagen 4 Ultra",
+            "description": "Максимальное качество Imagen 4"
         }
     }
     
