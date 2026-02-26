@@ -5,9 +5,7 @@ import replicate
 import requests
 import io
 import logging
-import json
-import base64
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Dict, Any
 from PIL import Image
 import time
 
@@ -19,71 +17,39 @@ logger = logging.getLogger(__name__)
 class ReplicateService:
     """Сервис для генерации изображений через Replicate API"""
     
-    # Список доступных моделей Nano Banana (все используют один API ключ r8)
-    # Все версии Nano Banana доступны по одному ключу
+    # Список доступных моделей (Nano Banana + Imagen). Выбор сохраняется, автоподмены нет.
     AVAILABLE_MODELS = {
-        "nano-banana-pro": {
-            "name": "google/nano-banana-pro",
-            "display_name": "Nano Banana Pro",
-            "description": "Google's state of the art image generation and editing model (Pro версия)"
-        },
         "nano-banana": {
             "name": "google/nano-banana",
             "display_name": "Nano Banana",
             "description": "Google's latest image editing model in Gemini 2.5"
+        },
+        "nano-banana-pro": {
+            "name": "google/nano-banana-pro",
+            "display_name": "Nano Banana Pro",
+            "description": "Google's state of the art image generation and editing model (Pro)"
         },
         "gemini-2.5-flash-image": {
             "name": "google/gemini-2.5-flash-image",
             "display_name": "Gemini 2.5 Flash Image",
             "description": "Google's latest image generation model in Gemini 2.5"
         },
-        "gemini-2.5-flash": {
-            "name": "google/gemini-2.5-flash",
-            "display_name": "Gemini 2.5 Flash",
-            "description": "Google's hybrid 'thinking' AI model optimized for speed and cost-efficiency"
-        },
-        "gemini-3-pro": {
-            "name": "google/gemini-3-pro",
-            "display_name": "Gemini 3 Pro",
-            "description": "Мощная multimodal LLM (не только картинки)"
-        },
-        "gemini-3-flash": {
-            "name": "google/gemini-3-flash",
-            "display_name": "Gemini 3 Flash",
-            "description": "Быстрый вариант Gemini 3"
-        },
-        "gemini-3.1-pro": {
-            "name": "google/gemini-3.1-pro",
-            "display_name": "Gemini 3.1 Pro",
-            "description": "Новая версия Gemini 3.1 Pro"
-        },
         "imagen-4": {
             "name": "google/imagen-4",
             "display_name": "Imagen 4",
-            "description": "Качественная генерация изображений"
+            "description": "Google's Imagen 4 flagship image generation model"
         },
         "imagen-4-fast": {
             "name": "google/imagen-4-fast",
             "display_name": "Imagen 4 Fast",
-            "description": "Быстрая версия Imagen 4"
+            "description": "Imagen 4 — быстрая генерация, приоритет скорости и стоимости"
         },
         "imagen-4-ultra": {
             "name": "google/imagen-4-ultra",
             "display_name": "Imagen 4 Ultra",
-            "description": "Максимальное качество Imagen 4"
+            "description": "Imagen 4 — максимальное качество, приоритет качества"
         }
     }
-    
-    # Модели, которые гарантированно возвращают изображение (URL/bytes). Остальные — LLM, могут вернуть JSON;
-    # для них извлечение изображения пробуем через _extract_image_from_response.
-    IMAGE_GENERATION_MODELS = [
-        "nano-banana-pro",
-        "nano-banana",
-        "gemini-2.5-flash-image",
-        "imagen-4",
-        "imagen-4-fast",
-        "imagen-4-ultra",
-    ]
     
     # Модель по умолчанию
     DEFAULT_MODEL = "nano-banana-pro"
@@ -199,78 +165,6 @@ class ReplicateService:
             logger.warning(f"[REPLICATE] Не удалось оптимизировать референс {ref_index}: {e}. Используем оригинал.")
             return image_data  # Возвращаем оригинал если оптимизация не удалась
     
-    def _extract_image_from_response(self, data: Any) -> Tuple[Optional[str], Optional[bytes]]:
-        """
-        Извлекает URL или bytes изображения из ответа модели (в т.ч. JSON от LLM).
-        Возвращает (result_url, result_data) — что нашлось.
-        """
-        if data is None:
-            return None, None
-        obj = data
-        if isinstance(data, str):
-            data_stripped = data.strip()
-            if data_stripped.startswith(('http://', 'https://')):
-                return data_stripped, None
-            try:
-                obj = json.loads(data)
-            except json.JSONDecodeError:
-                return None, None
-        if not isinstance(obj, dict):
-            return None, None
-        result_url = None
-        result_data = None
-        # Прямые ключи с URL
-        for key in ('url', 'image_url', 'output', 'image', 'file_url', 'src'):
-            val = obj.get(key)
-            if isinstance(val, str) and val.startswith(('http://', 'https://')):
-                result_url = val
-                logger.info(f"[REPLICATE] Из JSON извлечён URL из ключа '{key}'")
-                return result_url, result_data
-        # Base64 в ключах
-        for key in ('image', 'data', 'image_data', 'content', 'b64', 'base64'):
-            val = obj.get(key)
-            if isinstance(val, str):
-                try:
-                    decoded = base64.b64decode(val, validate=True)
-                    if len(decoded) > 100 and (
-                        decoded.startswith(b'\xff\xd8\xff') or
-                        decoded.startswith(b'\x89PNG') or
-                        decoded.startswith(b'RIFF')
-                    ):
-                        result_data = decoded
-                        logger.info(f"[REPLICATE] Из JSON извлечены данные изображения из ключа '{key}' ({len(decoded)} байт)")
-                        return result_url, result_data
-                except Exception:
-                    pass
-        # Вложенные структуры (content/parts как у Gemini)
-        for key in ('content', 'parts', 'candidates', 'outputs'):
-            val = obj.get(key)
-            if isinstance(val, list):
-                for part in val:
-                    if isinstance(part, dict):
-                        u, d = self._extract_image_from_response(part)
-                        if u or d:
-                            return u or result_url, d or result_data
-                    elif isinstance(part, str) and part.startswith(('http://', 'https://')):
-                        return part, result_data
-            elif isinstance(val, dict):
-                u, d = self._extract_image_from_response(val)
-                if u or d:
-                    return u or result_url, d or result_data
-        # action_input иногда содержит URL или base64
-        action_input = obj.get('action_input')
-        if isinstance(action_input, str):
-            if action_input.startswith(('http://', 'https://')):
-                return action_input, None
-            if len(action_input) > 200:
-                try:
-                    decoded = base64.b64decode(action_input, validate=True)
-                    if len(decoded) > 100:
-                        return None, decoded
-                except Exception:
-                    pass
-        return result_url, result_data
-    
     def __init__(self, api_token: str):
         """
         Инициализация клиента Replicate
@@ -331,28 +225,29 @@ class ReplicateService:
             # Определяем, какая модель используется (для адаптации параметров)
             current_model_key = model_name if model_name and model_name in self.AVAILABLE_MODELS else self.DEFAULT_MODEL
             
-            # Подготовка параметров (базовые параметры для всех моделей)
-            input_params = {
-                "prompt": prompt
-            }
+            # Подготовка параметров в зависимости от модели (без автоподмены)
+            input_params = {"prompt": prompt}
             
-            # Добавляем специфичные параметры для моделей Nano Banana
-            # Все модели Nano Banana поддерживают resolution и aspect_ratio
-            input_params["resolution"] = resolution
-            input_params["aspect_ratio"] = aspect_ratio
+            # Imagen 4 / Fast / Ultra: только prompt и aspect_ratio
+            if current_model_key in ("imagen-4", "imagen-4-fast", "imagen-4-ultra"):
+                input_params["aspect_ratio"] = aspect_ratio
+                if seed is not None:
+                    input_params["seed"] = int(seed)
+            else:
+                # Nano Banana / Gemini: resolution, aspect_ratio и остальное
+                input_params["resolution"] = resolution
+                input_params["aspect_ratio"] = aspect_ratio
+                if negative_prompt:
+                    input_params["negative_prompt"] = negative_prompt
+                if guidance_scale != 7.5:
+                    input_params["guidance_scale"] = guidance_scale
+                if num_inference_steps != 50:
+                    input_params["num_inference_steps"] = num_inference_steps
+                if seed is not None:
+                    input_params["seed"] = int(seed)
             
-            # Добавляем опциональные параметры
-            if negative_prompt:
-                input_params["negative_prompt"] = negative_prompt
-            if guidance_scale != 7.5:
-                input_params["guidance_scale"] = guidance_scale
-            if num_inference_steps != 50:
-                input_params["num_inference_steps"] = num_inference_steps
-            if seed is not None:
-                input_params["seed"] = int(seed)
-            
-            # Обработка референсных изображений
-            if reference_images and len(reference_images) > 0:
+            # Обработка референсных изображений (Imagen 4 не использует image_input в том же формате — не передаём)
+            if reference_images and len(reference_images) > 0 and current_model_key not in ("imagen-4", "imagen-4-fast", "imagen-4-ultra"):
                 processed_images = []
                 for idx, img in enumerate(reference_images[:14], 1):  # Максимум 14 изображений
                     try:
@@ -552,19 +447,20 @@ class ReplicateService:
             original_output = output  # Сохраняем исходный объект для получения URL
             
             if hasattr(output, '__iter__') and not isinstance(output, (str, bytes)):
-                # Итератор — собираем все элементы, т.к. у LLM первый элемент может быть JSON, а изображение — в нём или в следующем
+                # Итератор
                 logger.info("[REPLICATE] Результат - итератор, получаем элементы...")
+                # Пробуем получить URL из объекта итератора до получения элементов
                 if hasattr(output, 'url'):
                     try:
                         if callable(getattr(output, 'url', None)):
                             result_url = output.url()
                         else:
                             result_url = str(output.url)
-                        if result_url:
-                            logger.info(f"[REPLICATE] URL получен из итератора: {result_url[:100]}...")
+                        logger.info(f"[REPLICATE] URL получен из итератора: {result_url[:100] if result_url else 'URL отсутствует'}...")
                     except Exception as iter_url_error:
                         logger.debug(f"[REPLICATE] Не удалось получить URL из итератора: {iter_url_error}")
                 
+                # Пробуем получить URL из других атрибутов итератора
                 if not result_url:
                     for attr_name in ['uri', 'path', 'href', 'link', 'source', 'file']:
                         if hasattr(output, attr_name):
@@ -580,35 +476,21 @@ class ReplicateService:
                             except Exception as attr_error:
                                 logger.debug(f"[REPLICATE] Не удалось получить URL из атрибута {attr_name}: {attr_error}")
                 
-                items_from_iterator = []
                 for item in output:
                     elapsed = time.time() - start_time
                     if elapsed > self.TIMEOUT:
                         raise TimeoutError(f"Таймаут генерации ({self.TIMEOUT} секунд)")
-                    if item is not None:
-                        items_from_iterator.append(item)
-                        logger.info(f"[REPLICATE] Получен элемент за {elapsed:.1f} сек, тип: {type(item).__name__}")
-                
-                # Ищем изображение: сначала URL/bytes, потом из JSON (строка или dict)
-                for item in items_from_iterator:
-                    if isinstance(item, str) and item.startswith(('http://', 'https://')):
-                        result_url = item
-                        logger.info(f"[REPLICATE] Элемент итератора - строка URL: {item[:100]}...")
+                    if item:
+                        logger.info(f"[REPLICATE] Получен результат за {elapsed:.1f} сек, тип: {type(item)}")
+                        # Если item - это строка URL, сохраняем её сразу
+                        if isinstance(item, str) and item.startswith(('http://', 'https://')):
+                            logger.info(f"[REPLICATE] Элемент итератора - строка URL: {item[:100]}...")
+                            result_url = item  # Сохраняем URL сразу
+                        # Если item - это bytes, но у нас уже есть URL, сохраняем его
+                        elif isinstance(item, bytes) and result_url:
+                            logger.info(f"[REPLICATE] Элемент итератора - bytes, URL уже сохранен: {result_url[:100]}...")
+                        output = item
                         break
-                    if isinstance(item, bytes) and len(item) > 100:
-                        result_data = item
-                        logger.info(f"[REPLICATE] Элемент итератора - bytes, размер: {len(item)}")
-                        break
-                    if isinstance(item, (str, dict)):
-                        u, d = self._extract_image_from_response(item)
-                        if u or d:
-                            if u:
-                                result_url = u
-                            if d:
-                                result_data = d
-                            logger.info("[REPLICATE] Изображение извлечено из JSON/ответа итератора")
-                            break
-                output = items_from_iterator[0] if items_from_iterator else output
             else:
                 elapsed = time.time() - start_time
                 logger.info(f"[REPLICATE] Генерация завершена за {elapsed:.1f} сек")
@@ -694,21 +576,12 @@ class ReplicateService:
                             logger.debug(f"[REPLICATE] Не удалось получить URL из атрибута {attr_name}: {attr_error}")
             
             # Обработка строки (только если результат еще не обработан как bytes)
-            if not result_data and not result_url and isinstance(output, str):
-                if output.strip().startswith(('http://', 'https://')):
-                    result_url = output.strip()
+            if not result_data and isinstance(output, str):
+                if output.startswith(('http://', 'https://')):
+                    result_url = output
                     logger.info(f"[REPLICATE] Результат - строка URL: {result_url[:100]}...")
                 else:
-                    # LLM могут вернуть JSON с полем url/image/base64 — пробуем извлечь
-                    u, d = self._extract_image_from_response(output)
-                    if u or d:
-                        if u:
-                            result_url = u
-                        if d:
-                            result_data = d
-                        logger.info("[REPLICATE] Изображение извлечено из JSON в ответе модели")
-                    else:
-                        logger.warning(f"[REPLICATE] Результат - строка, но не URL и без изображения в JSON: {output[:200]}")
+                    logger.warning(f"[REPLICATE] Результат - строка, но не URL: {output[:200]}")
             
             # Обработка других типов (только если результат еще не обработан)
             if not result_data and not result_url and not isinstance(output, (bytes, str)):

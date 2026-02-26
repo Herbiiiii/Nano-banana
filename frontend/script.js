@@ -8,6 +8,48 @@ let aspectRatioAutoSelected = false; // Флаг для автоматическ
 let galleryUpdateInProgress = false; // Флаг для предотвращения параллельных обновлений галереи
 let lastGalleryHash = null; // Хеш последнего состояния галереи для предотвращения ненужных обновлений
 
+// Модели Imagen: только описание, соотношение сторон, seed (без разрешения, шагов, guidance, негативного промпта, референсов)
+const IMAGEN_MODEL_IDS = ['imagen-4', 'imagen-4-fast', 'imagen-4-ultra'];
+
+function isImagenModel() {
+    const sel = document.getElementById('modelName');
+    return sel && IMAGEN_MODEL_IDS.includes(sel.value);
+}
+
+/** Показывает/скрывает параметры в зависимости от выбранной модели. Недоступные параметры скрыты. */
+function updateParamsForModel() {
+    const modelSelect = document.getElementById('modelName');
+    const resolutionGroup = document.getElementById('resolutionGroup');
+    const negativePromptGroup = document.getElementById('negativePromptGroup');
+    const stepsGuidanceGroup = document.getElementById('stepsGuidanceGroup');
+    const referenceSection = document.getElementById('referenceImagesSection');
+    const hintEl = document.getElementById('modelParamsHint');
+    if (!modelSelect) return;
+
+    const isImagen = IMAGEN_MODEL_IDS.includes(modelSelect.value);
+
+    if (resolutionGroup) {
+        resolutionGroup.style.display = isImagen ? 'none' : 'block';
+    }
+    if (negativePromptGroup) {
+        negativePromptGroup.style.display = isImagen ? 'none' : 'block';
+    }
+    if (stepsGuidanceGroup) {
+        stepsGuidanceGroup.style.display = isImagen ? 'none' : 'block';
+    }
+    if (referenceSection) {
+        if (isImagen) {
+            referenceSection.style.display = 'none';
+        }
+        // Если не Imagen — видимость референсов по режиму (image-to-image) не меняем здесь
+    }
+    if (hintEl) {
+        hintEl.textContent = isImagen
+            ? 'Доступны: описание, соотношение сторон, seed. Референсы и остальные параметры не поддерживаются.'
+            : 'Доступны: все параметры (разрешение, шаги, guidance, референсы и т.д.).';
+    }
+}
+
 // Универсальные функции для работы с хранилищем (localStorage с fallback на sessionStorage)
 // Используем localStorage для надежности на мобильных устройствах и в приватном режиме
 function getStorage() {
@@ -726,13 +768,15 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('[INIT] Восстановлена выбранная модель:', savedModel);
     }
     
-    // Сохраняем модель при изменении
+    // Сохраняем модель при изменении и обновляем доступные параметры
     if (modelSelect) {
         modelSelect.addEventListener('change', (e) => {
             setSelectedModel(e.target.value);
+            updateParamsForModel();
             console.log('[MODEL] Модель изменена и сохранена:', e.target.value);
         });
     }
+    updateParamsForModel();
     
     // Обновление галереи каждые 5 секунд (только если есть активные генерации)
     setInterval(async () => {
@@ -952,7 +996,7 @@ function setupEventListeners() {
         radio.addEventListener('change', (e) => {
             const referenceSection = document.getElementById('referenceImagesSection');
             if (e.target.value === 'image-to-image') {
-                referenceSection.style.display = 'block';
+                referenceSection.style.display = isImagenModel() ? 'none' : 'block';
             } else {
                 referenceSection.style.display = 'none';
                 referenceImages = [];
@@ -2093,9 +2137,9 @@ async function editGeneration(id) {
             modeRadio.dispatchEvent(new Event('change'));
         }
         
-        // Показываем/скрываем секцию референсов в зависимости от режима
+        // Показываем/скрываем секцию референсов в зависимости от режима и модели
         const referenceSection = document.getElementById('referenceImagesSection');
-        if (generationMode === 'image-to-image') {
+        if (generationMode === 'image-to-image' && !isImagenModel()) {
             referenceSection.style.display = 'block';
         } else {
             referenceSection.style.display = 'none';
