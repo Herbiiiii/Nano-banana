@@ -315,9 +315,9 @@ body {
     transform: translateY(-5px);
     box-shadow: 0 8px 16px rgba(0,0,0,0.2);
 }
-/* галерейные карточки при hover увеличиваются, а не сдвигаются */
+/* галерейные карточки при hover слегка увеличиваются, а не сдвигаются */
 #imageGrid .gallery-card-wrap:hover {
-    transform: scale(1.14);
+    transform: scale(1.08);
     box-shadow: 0 12px 24px rgba(102, 126, 234, 0.35);
 }
 
@@ -894,21 +894,20 @@ button.info-btn:hover,
     box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
 }
 
-/* При наведении карточка заметно увеличивается, картинка целиком (без обрезки) и не «отдаляется» */
+/* При наведении карточка немного увеличивается, картинка почти целиком (без сильного зума) */
 .gallery-card-wrap {
     transform-origin: center center;
     transition: transform 0.25s ease, box-shadow 0.25s ease;
 }
 .gallery-card-wrap .image-container .generation-image {
-    transition: object-fit 0.25s ease, transform 0.25s ease;
+    transition: object-fit 0.25s ease;
 }
 .gallery-card-wrap:hover {
-    transform: scale(1.14);
+    transform: scale(1.08);
     box-shadow: 0 12px 24px rgba(102, 126, 234, 0.35);
 }
 .gallery-card-wrap:hover .image-container .generation-image {
     object-fit: contain !important;
-    transform: scale(1.08);
 }
 
 .prompt-text {
