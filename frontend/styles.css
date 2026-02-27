@@ -889,18 +889,20 @@ button.info-btn:hover,
     box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
 }
 
-/* При наведении карточка расширяется, картинка показывается целиком без «отдаления» */
+/* При наведении карточка увеличивается и картинка показывается целиком */
 .gallery-card-wrap {
     transform-origin: center center;
     transition: transform 0.25s ease, box-shadow 0.25s ease;
 }
+.gallery-card-wrap .image-container .generation-image {
+    transition: object-fit 0.25s ease;
+}
 .gallery-card-wrap:hover {
-    transform: scale(1.03);
+    transform: scale(1.06);
     box-shadow: 0 12px 24px rgba(102, 126, 234, 0.35);
 }
 .gallery-card-wrap:hover .image-container .generation-image {
     object-fit: contain !important;
-    transform: none;
 }
 
 .prompt-text {
@@ -1050,7 +1052,7 @@ button.info-btn:hover,
 
 .fullscreen-image-modal .fullscreen-close-btn:hover {
     opacity: 1 !important;
-    transform: translateY(calc(-50% - 36px)) scale(1.1) !important;
+    transform: scale(1.1) !important;
 }
 
 @keyframes fadeIn {

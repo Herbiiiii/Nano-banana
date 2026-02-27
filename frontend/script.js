@@ -2409,7 +2409,7 @@ function openFullscreenCarousel(items, currentIndex) {
     
     const closeBtn = document.createElement('button');
     closeBtn.className = 'btn btn-sm btn-light position-absolute d-flex align-items-center justify-content-center fullscreen-close-btn';
-    closeBtn.style.cssText = 'right: 12px; top: 50%; transform: translateY(calc(-50% - 36px)); width: 48px; height: 48px; border-radius: 50%; z-index: 10001; opacity: 0.9;';
+    closeBtn.style.cssText = 'top: 12px; right: 12px; width: 48px; height: 48px; border-radius: 50%; z-index: 10001; opacity: 0.9;';
     closeBtn.innerHTML = '<i class="fas fa-times"></i>';
     closeBtn.onclick = (e) => { e.stopPropagation(); closeFullscreenImage(); };
     

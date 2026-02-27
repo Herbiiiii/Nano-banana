@@ -16,8 +16,10 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nano_banana_pass}
       # Разрешаем подключения из Docker сети
       POSTGRES_HOST_AUTH_METHOD: md5
-    ports:
-      - "5432:5432"
+    # Порт 5432 не пробрасываем наружу — к БД подключаются только api и adminer по внутренней сети.
+    # Если нужен доступ с хоста (psql с сервера): раскомментируйте строку ниже.
+    # ports:
+    #   - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
