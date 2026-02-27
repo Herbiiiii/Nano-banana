@@ -1826,7 +1826,8 @@ async function loadGallery() {
             .map(g => ({ url: g.result_url, prompt: g.prompt || '' }));
         
         let viewableIndex = 0;
-        grid.innerHTML = sortedGenerations.map(gen => {
+        grid.innerHTML = '';
+        sortedGenerations.forEach(gen => {
             const hasImage = gen.status === 'completed' && gen.result_url;
             const galleryIndex = hasImage ? viewableIndex++ : -1;
             let imageBlock;
@@ -1848,31 +1849,34 @@ async function loadGallery() {
             const dataImageUrl = hasImage ? gen.result_url.replace(/'/g, "\\'") : '';
             const dataPrompt = hasImage ? (gen.prompt || '').replace(/'/g, "\\'").replace(/"/g, '&quot;') : '';
             const cursorStyle = hasImage ? 'pointer' : 'default';
-            return [
-                '<div class="col" data-generation-id="' + gen.id + '">',
-                '  <div class="card h-100 generation-card gallery-card-wrap" style="border-radius: 12px; overflow: hidden;">',
-                '    <div class="position-relative image-container" data-gen-id="' + gen.id + '" data-gallery-index="' + (hasImage ? galleryIndex : '') + '" data-image-url="' + dataImageUrl + '" data-prompt="' + dataPrompt + '" style="height: 350px; overflow: hidden !important; background: #1a1a2e; cursor: ' + cursorStyle + '; border-radius: 0 0 12px 12px !important; position: relative;">',
+            const cardHtml = [
+                '<div class="card h-100 generation-card gallery-card-wrap" style="border-radius: 12px; overflow: hidden;">',
+                '  <div class="position-relative image-container" data-gen-id="' + gen.id + '" data-gallery-index="' + (hasImage ? galleryIndex : '') + '" data-image-url="' + dataImageUrl + '" data-prompt="' + dataPrompt + '" style="height: 350px; overflow: hidden !important; background: #1a1a2e; cursor: ' + cursorStyle + '; border-radius: 0 0 12px 12px !important; position: relative;">',
                 imageBlock,
-                '    <div class="bg-dark d-flex align-items-center justify-content-center image-error position-absolute top-0 start-0 w-100 h-100" style="display: none !important; z-index: 2; background: linear-gradient(135deg, #1a1a2e 0%, #252547 100%) !important; pointer-events: none;"><div class="text-center"><i class="fas fa-exclamation-triangle text-warning mb-2" style="font-size: 2rem;"></i><p class="text-light mb-0">Ошибка загрузки изображения</p><small class="text-muted">Попробуйте обновить страницу</small></div></div>',
-                '    <div class="position-absolute top-0 end-0 m-2" style="z-index: 5; pointer-events: none; display: flex; flex-direction: column; align-items: flex-end; gap: 0.25rem;">',
-                '      <div style="display: flex; align-items: center; gap: 0.25rem; pointer-events: none;">',
-                '        <button class="btn btn-sm generation-status-badge" disabled style="opacity: 1 !important; background: ' + statusBg + ' !important; border: 1px solid ' + statusBorder + ' !important; padding: 0.25rem 0.5rem; color: #ffffff !important; font-weight: 700; cursor: default; pointer-events: none; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);">' + statusText + '</button>',
+                '  <div class="bg-dark d-flex align-items-center justify-content-center image-error position-absolute top-0 start-0 w-100 h-100" style="display: none !important; z-index: 2; background: linear-gradient(135deg, #1a1a2e 0%, #252547 100%) !important; pointer-events: none;"><div class="text-center"><i class="fas fa-exclamation-triangle text-warning mb-2" style="font-size: 2rem;"></i><p class="text-light mb-0">Ошибка загрузки изображения</p><small class="text-muted">Попробуйте обновить страницу</small></div></div>',
+                '  <div class="position-absolute top-0 end-0 m-2" style="z-index: 5; pointer-events: none; display: flex; flex-direction: column; align-items: flex-end; gap: 0.25rem;">',
+                '    <div style="display: flex; align-items: center; gap: 0.25rem; pointer-events: none;">',
+                '      <button class="btn btn-sm generation-status-badge" disabled style="opacity: 1 !important; background: ' + statusBg + ' !important; border: 1px solid ' + statusBorder + ' !important; padding: 0.25rem 0.5rem; color: #ffffff !important; font-weight: 700; cursor: default; pointer-events: none; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);">' + statusText + '</button>',
                 infoBtnHtml,
-                '      </div>',
-                daysLeftHtml,
                 '    </div>',
-                '    <div class="prompt-and-buttons-overlay position-absolute bottom-0 start-0 w-100" style="z-index: 5; background: linear-gradient(to top, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.3) 50%, rgba(0,0,0,0) 100%); padding: 1rem; border-radius: 0 0 12px 12px; backdrop-filter: blur(6px); overflow: hidden;">',
-                '      <p class="text-light mb-2 small prompt-text" style="font-size: 0.7225rem; line-height: 1.19; padding: 0.5rem; border-radius: 4px; max-width: 100%; overflow-x: auto; overflow-y: hidden; white-space: nowrap;">' + promptEscaped + '</p>',
-                '      <div class="d-flex gap-2 justify-content-center align-items-center">',
+                daysLeftHtml,
+                '  </div>',
+                '  <div class="prompt-and-buttons-overlay position-absolute bottom-0 start-0 w-100" style="z-index: 5; background: linear-gradient(to top, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.3) 50%, rgba(0,0,0,0) 100%); padding: 1rem; border-radius: 0 0 12px 12px; backdrop-filter: blur(6px); overflow: hidden;">',
+                '    <p class="text-light mb-2 small prompt-text" style="font-size: 0.7225rem; line-height: 1.19; padding: 0.5rem; border-radius: 4px; max-width: 100%; overflow-x: auto; overflow-y: hidden; white-space: nowrap;">' + promptEscaped + '</p>',
+                '    <div class="d-flex gap-2 justify-content-center align-items-center">',
                 downloadBtnHtml,
-                '        <button class="btn btn-icon-only btn-edit" onclick="event.stopPropagation(); event.preventDefault(); editGeneration(' + gen.id + ')" title="Редактировать" style="width: 28px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center; border-radius: 4px; border: none; font-size: 0.7rem; pointer-events: auto; cursor: pointer; z-index: 10; position: relative;"><i class="fas fa-edit"></i></button>',
-                '        <button class="btn btn-icon-only btn-delete" onclick="event.stopPropagation(); event.preventDefault(); deleteGeneration(' + gen.id + ')" title="Удалить" style="width: 28px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center; border-radius: 4px; border: none; font-size: 0.7rem; pointer-events: auto; cursor: pointer; z-index: 10; position: relative;"><i class="fas fa-trash"></i></button>',
-                '      </div>',
+                '      <button class="btn btn-icon-only btn-edit" onclick="event.stopPropagation(); event.preventDefault(); editGeneration(' + gen.id + ')" title="Редактировать" style="width: 28px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center; border-radius: 4px; border: none; font-size: 0.7rem; pointer-events: auto; cursor: pointer; z-index: 10; position: relative;"><i class="fas fa-edit"></i></button>',
+                '      <button class="btn btn-icon-only btn-delete" onclick="event.stopPropagation(); event.preventDefault(); deleteGeneration(' + gen.id + ')" title="Удалить" style="width: 28px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center; border-radius: 4px; border: none; font-size: 0.7rem; pointer-events: auto; cursor: pointer; z-index: 10; position: relative;"><i class="fas fa-trash"></i></button>',
                 '    </div>',
                 '  </div>',
                 '</div>'
             ].join('');
-        }).join('');
+            const col = document.createElement('div');
+            col.className = 'col';
+            col.setAttribute('data-generation-id', String(gen.id));
+            col.innerHTML = cardHtml;
+            grid.appendChild(col);
+        });
         
         grid.setAttribute('data-gallery-items', JSON.stringify(viewableItems));
         console.log('[GALLERY] Галерея обновлена, отображено карточек:', sortedGenerations.length, 'просматриваемых:', viewableItems.length);
@@ -2404,8 +2408,8 @@ function openFullscreenCarousel(items, currentIndex) {
     counterText.style.cssText = 'font-size: 0.85rem; opacity: 0.7;';
     
     const closeBtn = document.createElement('button');
-    closeBtn.className = 'btn btn-sm btn-light position-absolute';
-    closeBtn.style.cssText = 'top: 10px; right: 10px; z-index: 10001;';
+    closeBtn.className = 'btn btn-sm btn-light position-absolute d-flex align-items-center justify-content-center fullscreen-close-btn';
+    closeBtn.style.cssText = 'right: 12px; top: 50%; transform: translateY(calc(-50% - 36px)); width: 48px; height: 48px; border-radius: 50%; z-index: 10001; opacity: 0.9;';
     closeBtn.innerHTML = '<i class="fas fa-times"></i>';
     closeBtn.onclick = (e) => { e.stopPropagation(); closeFullscreenImage(); };
     
@@ -2440,7 +2444,6 @@ function openFullscreenCarousel(items, currentIndex) {
     arrowRight.onclick = (e) => { e.stopPropagation(); showSlide(index + 1); };
     if (total <= 1) arrowRight.style.display = 'none';
     
-    container.appendChild(closeBtn);
     container.appendChild(img);
     container.appendChild(promptText);
     container.appendChild(counterText);
@@ -2448,6 +2451,7 @@ function openFullscreenCarousel(items, currentIndex) {
     modal.appendChild(container);
     modal.appendChild(arrowLeft);
     modal.appendChild(arrowRight);
+    modal.appendChild(closeBtn);
     
     document.body.appendChild(modal);
     document.body.style.overflow = 'hidden';
