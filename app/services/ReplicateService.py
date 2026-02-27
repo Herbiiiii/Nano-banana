@@ -697,58 +697,108 @@ class ReplicateService:
         except Exception as e:
             logger.error(f"[REPLICATE] Ошибка генерации: {e}", exc_info=True)
             
-            # Улучшенное извлечение деталей ошибки
-            error_message = str(e)
+            # Базовый текст из исключения
+            raw_error = str(e)
+            error_message = raw_error
             
             # Специальная обработка ошибки 499 "Client Closed Request"
-            if "499" in error_message or "Client Closed Request" in error_message:
+            if "499" in error_message or "client closed request" in error_message.lower():
                 error_message = (
                     "Соединение было закрыто до завершения генерации. "
-                    "Это может произойти если генерация занимает слишком много времени или есть проблемы с сетью. "
+                    "Это может произойти, если генерация занимает слишком много времени или есть проблемы с сетью. "
                     "Попробуйте повторить запрос или упростить промпт."
                 )
-                logger.warning(f"[REPLICATE] Обнаружена ошибка 499 (Client Closed Request). "
-                             f"Возможные причины: таймаут, проблемы с сетью, слишком долгая генерация.")
+                logger.warning(
+                    "[REPLICATE] Обнаружена ошибка 499 (Client Closed Request). "
+                    "Возможные причины: таймаут, проблемы с сетью, слишком долгая генерация."
+                )
             
-            # Если это ошибка от Replicate API, пытаемся извлечь больше деталей
-            if hasattr(e, 'message'):
+            # Если это ошибка от Replicate API, пытаемся извлечь более удобочитаемый текст
+            if hasattr(e, "message"):
                 error_message = str(e.message)
-            elif hasattr(e, 'args') and len(e.args) > 0:
+            elif hasattr(e, "args") and len(e.args) > 0:
                 error_message = str(e.args[0])
             
-            # Проверяем наличие дополнительной информации в исключении
+            # Собираем дополнительные детали (cause / context)
             error_details = []
-            if hasattr(e, '__cause__') and e.__cause__:
+            if hasattr(e, "__cause__") and e.__cause__:
                 cause_str = str(e.__cause__)
                 error_details.append(f"Причина: {cause_str}")
-                # Если в причине тоже есть 499, добавляем пояснение
-                if "499" in cause_str or "Client Closed Request" in cause_str:
-                    error_message = (
-                        "Соединение было закрыто до завершения генерации. "
-                        "Это может произойти если генерация занимает слишком много времени или есть проблемы с сетью. "
-                        "Попробуйте повторить запрос или упростить промпт."
-                    )
-            if hasattr(e, '__context__') and e.__context__:
+            if hasattr(e, "__context__") and e.__context__:
                 context_str = str(e.__context__)
                 error_details.append(f"Контекст: {context_str}")
-                # Если в контексте тоже есть 499, добавляем пояснение
-                if "499" in context_str or "Client Closed Request" in context_str:
-                    error_message = (
-                        "Соединение было закрыто до завершения генерации. "
-                        "Это может произойти если генерация занимает слишком много времени или есть проблемы с сетью. "
-                        "Попробуйте повторить запрос или упростить промпт."
-                    )
             
-            # Если есть детали, добавляем их к сообщению (но не для 499, чтобы не дублировать)
-            if error_details and "499" not in error_message and "Client Closed Request" not in error_message:
-                error_message = f"{error_message} ({', '.join(error_details)})"
+            # Классификация ошибки для пользователя
+            lower_msg = (error_message or "").lower()
+            user_friendly = error_message or "Неизвестная ошибка генерации"
             
-            logger.error(f"[REPLICATE] Детали ошибки: {error_message}")
+            # 1) Политика безопасности / цензура
+            if any(
+                key in lower_msg
+                for key in [
+                    "content policy",
+                    "violates safety",
+                    "safety",
+                    "disallowed",
+                    "not allowed",
+                    "nsfw",
+                    "sexual content",
+                ]
+            ):
+                user_friendly = (
+                    "Запрос заблокирован политикой безопасности модели. "
+                    "Сервис не может сгенерировать такое изображение. "
+                    "Попробуйте переформулировать промпт, убрав откровенный, насильственный "
+                    "или другой запрещённый контент."
+                )
+            
+            # 2) Лимиты / перегрузка (часто приходит как E003 / 429 / high demand)
+            elif any(
+                key in lower_msg
+                for key in [
+                    "e003",
+                    "rate limit",
+                    "ratelimit",
+                    "429",
+                    "high demand",
+                    "too many requests",
+                ]
+            ):
+                user_friendly = (
+                    "Сервис генерации временно перегружен или достигнут лимит запросов по API. "
+                    "Подождите немного и попробуйте снова. "
+                    "Если ошибка повторяется часто, проверьте лимиты вашего Replicate API ключа."
+                )
+            
+            # 3) Таймауты / сетевые ошибки
+            elif any(
+                key in lower_msg
+                for key in [
+                    "timeout",
+                    "timed out",
+                    "connection error",
+                    "network error",
+                    "client closed request",
+                ]
+            ):
+                user_friendly = (
+                    "Во время генерации произошла сетевая ошибка или таймаут. "
+                    "Проверьте соединение с интернетом и попробуйте ещё раз."
+                )
+            
+            # Добавляем технические детали в лог, но не показываем пользователю полностью
+            if error_details:
+                logger.error(
+                    "[REPLICATE] Дополнительные детали ошибки: "
+                    + " | ".join(error_details)
+                )
+            
+            logger.error(f"[REPLICATE] Итоговое сообщение об ошибке для пользователя: {user_friendly}")
             
             return {
-                'success': False,
-                'image_url': None,
-                'image_data': None,
-                'error': error_message
+                "success": False,
+                "image_url": None,
+                "image_data": None,
+                "error": user_friendly,
             }
 
