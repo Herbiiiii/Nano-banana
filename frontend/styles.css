@@ -889,6 +889,12 @@ button.info-btn:hover,
     box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
 }
 
+/* При наведении на карточку — картинка показывается целиком (без обрезки) */
+.gallery-card-wrap:hover .image-container .generation-image {
+    object-fit: contain !important;
+    transform: scale(1.03);
+}
+
 .prompt-text {
     scrollbar-width: thin;
     scrollbar-color: rgba(102, 126, 234, 0.5) transparent;
@@ -1020,9 +1026,18 @@ button.info-btn:hover,
     border-color: rgba(229, 62, 62, 0.5);
 }
 
-/* Стили для фуллскрин модалки */
+/* Стили для фуллскрин модалки и карусели */
 .fullscreen-image-modal {
     animation: fadeIn 0.2s ease-in;
+}
+
+.fullscreen-image-modal .fullscreen-arrow {
+    transition: opacity 0.2s, transform 0.2s;
+}
+
+.fullscreen-image-modal .fullscreen-arrow:hover {
+    opacity: 1 !important;
+    transform: translateY(-50%) scale(1.1) !important;
 }
 
 @keyframes fadeIn {

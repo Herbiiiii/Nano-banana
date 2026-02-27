@@ -19,6 +19,11 @@ class ReplicateService:
     
     # Список доступных моделей (Nano Banana + Imagen). Выбор сохраняется, автоподмены нет.
     AVAILABLE_MODELS = {
+        "nano-banana-2": {
+            "name": "google/nano-banana-2",
+            "display_name": "Nano Banana 2",
+            "description": "Новая модель: качество Pro и скорость Flash, улучшенный текст в изображениях"
+        },
         "nano-banana": {
             "name": "google/nano-banana",
             "display_name": "Nano Banana",

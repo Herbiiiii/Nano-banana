@@ -1820,12 +1820,21 @@ async function loadGallery() {
         }
         lastGalleryHash = currentHash;
         
-        grid.innerHTML = sortedGenerations.map(gen => `
+        // Список только просматриваемых картинок (completed с result_url) для карусели в фуллскрине
+        const viewableItems = sortedGenerations
+            .filter(g => g.status === 'completed' && g.result_url)
+            .map(g => ({ url: g.result_url, prompt: g.prompt || '' }));
+        
+        let viewableIndex = 0;
+        grid.innerHTML = sortedGenerations.map(gen => {
+            const hasImage = gen.status === 'completed' && gen.result_url;
+            const galleryIndex = hasImage ? viewableIndex++ : -1;
+            return `
             <div class="col" data-generation-id="${gen.id}">
-                <div class="card h-100 generation-card" style="border-radius: 12px; overflow: hidden;">
-                    <div class="position-relative image-container" data-gen-id="${gen.id}" data-image-url="${gen.status === 'completed' && gen.result_url ? gen.result_url.replace(/'/g, "\\'") : ''}" data-prompt="${gen.status === 'completed' && gen.result_url ? (gen.prompt || '').replace(/'/g, "\\'").replace(/"/g, '&quot;') : ''}" style="height: 350px; overflow: hidden !important; background: #1a1a2e; cursor: ${gen.status === 'completed' && gen.result_url ? 'pointer' : 'default'}; border-radius: 0 0 12px 12px !important; position: relative;">
-                        ${gen.status === 'completed' && gen.result_url ? 
-                            `<img src="${gen.result_url}" class="card-img-top generation-image" data-gen-id="${gen.id}" style="height: 350px; width: 100%; object-fit: cover; position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: 1; display: block; border-radius: 0 0 12px 12px;" alt="Generated image" 
+                <div class="card h-100 generation-card gallery-card-wrap" style="border-radius: 12px; overflow: hidden;">
+                    <div class="position-relative image-container" data-gen-id="${gen.id}" data-gallery-index="${hasImage ? galleryIndex : ''}" data-image-url="${hasImage ? gen.result_url.replace(/'/g, "\\'") : ''}" data-prompt="${hasImage ? (gen.prompt || '').replace(/'/g, "\\'").replace(/"/g, '&quot;') : ''}" style="height: 350px; overflow: hidden !important; background: #1a1a2e; cursor: ${hasImage ? 'pointer' : 'default'}; border-radius: 0 0 12px 12px !important; position: relative;">
+                        ${hasImage ? 
+                            `<img src="${gen.result_url}" class="card-img-top generation-image" data-gen-id="${gen.id}" style="height: 350px; width: 100%; object-fit: cover; position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: 1; display: block; border-radius: 0 0 12px 12px; transition: object-fit 0.25s ease, transform 0.25s ease;" alt="Generated image" 
                                 onerror="(function(img, genId) { console.error('[IMAGE] Ошибка загрузки изображения для генерации', genId); console.error('[IMAGE] URL:', img.src); img.style.display='none'; const container = img.closest('.image-container'); const errorDiv = container ? container.querySelector('.image-error') : null; if (errorDiv) { errorDiv.style.setProperty('display', 'flex', 'important'); errorDiv.style.zIndex='2'; } })(this, ${gen.id});" 
                                 onload="(function(img, genId) { console.log('[IMAGE] Изображение загружено для генерации', genId); console.log('[IMAGE] URL:', img.src); const container = img.closest('.image-container'); const errorDiv = container ? container.querySelector('.image-error') : null; if (errorDiv) { errorDiv.style.setProperty('display', 'none', 'important'); errorDiv.style.zIndex='2'; } img.style.display='block'; img.style.zIndex='1'; })(this, ${gen.id});">` :
                             `<div class="position-absolute top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center" style="z-index: 1; background: linear-gradient(135deg, #1a1a2e 0%, #252547 100%); border-radius: 0 0 12px 12px;">
@@ -1885,25 +1894,33 @@ async function loadGallery() {
             </div>
         `).join('');
         
-        console.log('[GALLERY] Галерея обновлена, отображено карточек:', sortedGenerations.length);
+        grid.setAttribute('data-gallery-items', JSON.stringify(viewableItems));
+        console.log('[GALLERY] Галерея обновлена, отображено карточек:', sortedGenerations.length, 'просматриваемых:', viewableItems.length);
         
         // Добавляем обработчики событий для карточек после рендеринга
         setTimeout(() => {
-            // Обработчики для открытия фуллскрина
+            const galleryItems = (() => {
+                try {
+                    const raw = grid.getAttribute('data-gallery-items');
+                    return raw ? JSON.parse(raw) : [];
+                } catch (_) { return []; }
+            })();
+            
             document.querySelectorAll('.image-container[data-image-url]').forEach(container => {
                 const imageUrl = container.getAttribute('data-image-url');
                 const prompt = container.getAttribute('data-prompt');
+                const idxStr = container.getAttribute('data-gallery-index');
+                const index = idxStr !== '' && idxStr !== null ? parseInt(idxStr, 10) : 0;
                 
                 if (imageUrl) {
                     container.addEventListener('click', (e) => {
-                        // Проверяем что клик не на кнопках
                         if (!e.target.closest('.info-btn') && 
                             !e.target.closest('.btn-edit') && 
                             !e.target.closest('.btn-delete') && 
                             !e.target.closest('.btn-download') && 
                             !e.target.closest('.prompt-and-buttons-overlay') &&
                             !e.target.closest('.generation-status-badge')) {
-                            openFullscreenImage(imageUrl, prompt);
+                            openFullscreenCarousel(galleryItems, index >= 0 ? index : 0);
                         }
                     });
                 }
@@ -2378,59 +2395,105 @@ async function downloadImage(imageUrl, prompt) {
     }
 }
 
-// Функция для открытия изображения в фуллскрине
-function openFullscreenImage(imageUrl, prompt) {
-    // Создаем модальное окно для фуллскрина
+// Фуллскрин-карусель: листание стрелками, свайпами, визуальные стрелки
+function openFullscreenCarousel(items, currentIndex) {
+    if (!items || items.length === 0) return;
+    const total = items.length;
+    let index = Math.max(0, Math.min(currentIndex, total - 1));
+    
     const modal = document.createElement('div');
     modal.className = 'fullscreen-image-modal';
+    modal.setAttribute('role', 'dialog');
     modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); z-index: 9999; display: flex; align-items: center; justify-content: center; cursor: pointer;';
-    modal.onclick = () => closeFullscreenImage();
+    modal.onclick = (e) => { if (e.target === modal) closeFullscreenImage(); };
     
     const container = document.createElement('div');
-    container.style.cssText = 'position: relative; max-width: 95%; max-height: 95%; display: flex; flex-direction: column; align-items: center;';
+    container.style.cssText = 'position: relative; max-width: 95%; max-height: 95%; display: flex; flex-direction: column; align-items: center; cursor: default;';
     container.onclick = (e) => e.stopPropagation();
     
     const img = document.createElement('img');
-    img.src = imageUrl;
-    img.style.cssText = 'max-width: 100%; max-height: 85vh; object-fit: contain; border-radius: 8px;';
-    img.onclick = () => downloadImage(imageUrl, prompt);
-    
-    const closeBtn = document.createElement('button');
-    closeBtn.className = 'btn btn-sm btn-light position-absolute';
-    closeBtn.style.cssText = 'top: 10px; right: 10px; z-index: 10000;';
-    closeBtn.innerHTML = '<i class="fas fa-times"></i>';
-    closeBtn.onclick = () => closeFullscreenImage();
-    
-    const downloadBtn = document.createElement('button');
-    downloadBtn.className = 'btn btn-sm btn-success mt-3';
-    downloadBtn.innerHTML = '<i class="fas fa-download me-2"></i>Скачать изображение';
-    downloadBtn.onclick = (e) => {
-        e.stopPropagation();
-        downloadImage(imageUrl, prompt);
-    };
+    img.alt = 'Изображение';
+    img.style.cssText = 'max-width: 100%; max-height: 75vh; object-fit: contain; border-radius: 8px; user-select: none;';
     
     const promptText = document.createElement('div');
     promptText.className = 'text-light text-center mt-2';
     promptText.style.cssText = 'max-width: 80%; font-size: 0.9rem; opacity: 0.8;';
-    promptText.textContent = prompt;
+    
+    const counterText = document.createElement('div');
+    counterText.className = 'text-light text-center mt-1';
+    counterText.style.cssText = 'font-size: 0.85rem; opacity: 0.7;';
+    
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'btn btn-sm btn-light position-absolute';
+    closeBtn.style.cssText = 'top: 10px; right: 10px; z-index: 10001;';
+    closeBtn.innerHTML = '<i class="fas fa-times"></i>';
+    closeBtn.onclick = (e) => { e.stopPropagation(); closeFullscreenImage(); };
+    
+    const downloadBtn = document.createElement('button');
+    downloadBtn.className = 'btn btn-sm btn-success mt-3';
+    downloadBtn.innerHTML = '<i class="fas fa-download me-2"></i>Скачать';
+    downloadBtn.onclick = (e) => {
+        e.stopPropagation();
+        const item = items[index];
+        if (item) downloadImage(item.url, item.prompt);
+    };
+    
+    function showSlide(i) {
+        index = ((i % total) + total) % total;
+        const item = items[index];
+        img.src = item.url;
+        promptText.textContent = item.prompt || '';
+        counterText.textContent = total > 1 ? `${index + 1} / ${total}` : '';
+    }
+    
+    const arrowLeft = document.createElement('button');
+    arrowLeft.className = 'btn btn-lg btn-light position-absolute d-flex align-items-center justify-content-center fullscreen-arrow fullscreen-arrow-left';
+    arrowLeft.style.cssText = 'left: 12px; top: 50%; transform: translateY(-50%); width: 48px; height: 48px; border-radius: 50%; z-index: 10001; opacity: 0.9;';
+    arrowLeft.innerHTML = '<i class="fas fa-chevron-left"></i>';
+    arrowLeft.onclick = (e) => { e.stopPropagation(); showSlide(index - 1); };
+    if (total <= 1) arrowLeft.style.display = 'none';
+    
+    const arrowRight = document.createElement('button');
+    arrowRight.className = 'btn btn-lg btn-light position-absolute d-flex align-items-center justify-content-center fullscreen-arrow fullscreen-arrow-right';
+    arrowRight.style.cssText = 'right: 12px; top: 50%; transform: translateY(-50%); width: 48px; height: 48px; border-radius: 50%; z-index: 10001; opacity: 0.9;';
+    arrowRight.innerHTML = '<i class="fas fa-chevron-right"></i>';
+    arrowRight.onclick = (e) => { e.stopPropagation(); showSlide(index + 1); };
+    if (total <= 1) arrowRight.style.display = 'none';
     
     container.appendChild(closeBtn);
     container.appendChild(img);
-    container.appendChild(downloadBtn);
     container.appendChild(promptText);
+    container.appendChild(counterText);
+    container.appendChild(downloadBtn);
     modal.appendChild(container);
+    modal.appendChild(arrowLeft);
+    modal.appendChild(arrowRight);
     
     document.body.appendChild(modal);
     document.body.style.overflow = 'hidden';
+    showSlide(index);
     
-    // Закрытие по Escape
-    const escapeHandler = (e) => {
+    const keyHandler = (e) => {
         if (e.key === 'Escape') {
             closeFullscreenImage();
-            document.removeEventListener('keydown', escapeHandler);
+            document.removeEventListener('keydown', keyHandler);
+            return;
         }
+        if (e.key === 'ArrowLeft') { e.preventDefault(); showSlide(index - 1); }
+        if (e.key === 'ArrowRight') { e.preventDefault(); showSlide(index + 1); }
     };
-    document.addEventListener('keydown', escapeHandler);
+    document.addEventListener('keydown', keyHandler);
+    
+    let touchStartX = 0;
+    modal.addEventListener('touchstart', (e) => { touchStartX = e.touches[0].clientX; }, { passive: true });
+    modal.addEventListener('touchend', (e) => {
+        if (!e.changedTouches[0]) return;
+        const dx = e.changedTouches[0].clientX - touchStartX;
+        if (Math.abs(dx) > 50) {
+            if (dx > 0) showSlide(index - 1);
+            else showSlide(index + 1);
+        }
+    }, { passive: true });
 }
 
 function closeFullscreenImage() {
