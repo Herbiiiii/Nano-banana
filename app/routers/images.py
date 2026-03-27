@@ -23,10 +23,21 @@ logger = logging.getLogger(__name__)
 executor = ThreadPoolExecutor(max_workers=settings.MAX_WORKERS)
 
 # Максимальное количество повторных попыток генерации при временных ошибках (E003 / 429)
-MAX_GENERATION_RETRIES = 3
+MAX_GENERATION_RETRIES = 5
 
 router = APIRouter(prefix="/images", tags=["images"])
 minio = MinioService()
+
+FALLBACK_MODEL_BY_MODEL = {
+    "nano-banana-2": "nano-banana-pro",
+}
+
+
+def get_fallback_model(model_name: Optional[str]) -> Optional[str]:
+    """Возвращает fallback-модель для кнопки быстрого перезапуска."""
+    if not model_name:
+        return None
+    return FALLBACK_MODEL_BY_MODEL.get(model_name)
 
 
 def _extract_minio_path_from_url(url: str, bucket: str) -> Optional[str]:
@@ -456,6 +467,8 @@ async def generate_image(
             # Сохраняем выбранную модель в метаданных (для обратной совместимости)
             generation_metadata = {}
             generation_metadata['model_name'] = selected_model
+            generation_metadata['retry_count'] = 0
+            generation_metadata['max_retries'] = MAX_GENERATION_RETRIES
             
             generation = Generation(
                 user_id=user.user_id,
@@ -651,6 +664,12 @@ async def list_generations(
                 # Если модель все еще не найдена, используем по умолчанию
                 if not model_name:
                     model_name = "nano-banana-pro"
+
+                retry_count = 0
+                max_retries = MAX_GENERATION_RETRIES
+                if gen.generation_metadata:
+                    retry_count = int(gen.generation_metadata.get("retry_count", 0) or 0)
+                    max_retries = int(gen.generation_metadata.get("max_retries", MAX_GENERATION_RETRIES) or MAX_GENERATION_RETRIES)
                 
                 result.append(ImageResponse(
                     id=gen.id,
@@ -664,7 +683,10 @@ async def list_generations(
                     status=gen.status,
                     created_at=gen.created_at,
                     error_message=error_msg,  # None для старых генераций без ошибок
-                    model_name=model_name
+                    model_name=model_name,
+                    retry_count=retry_count,
+                    max_retries=max_retries,
+                    fallback_model=get_fallback_model(model_name)
                 ))
             
             # Логируем только активные процессы (running/pending), чтобы не засорять логи

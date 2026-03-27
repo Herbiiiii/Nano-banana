@@ -1830,18 +1830,27 @@ async function loadGallery() {
         sortedGenerations.forEach(gen => {
             const hasImage = gen.status === 'completed' && gen.result_url;
             const galleryIndex = hasImage ? viewableIndex++ : -1;
+            const retryCount = Number.isFinite(Number(gen.retry_count)) ? Number(gen.retry_count) : 0;
+            const maxRetries = Number.isFinite(Number(gen.max_retries)) ? Number(gen.max_retries) : 5;
+            const attemptNumber = Math.min(retryCount + 1, maxRetries);
             let imageBlock;
             if (hasImage) {
                 imageBlock = '<img src="' + gen.result_url.replace(/"/g, '&quot;') + '" class="card-img-top generation-image" data-gen-id="' + gen.id + '" style="height: 350px; width: 100%; object-fit: cover; position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: 1; display: block; border-radius: 0 0 12px 12px; transition: object-fit 0.25s ease, transform 0.25s ease;" alt="Generated image" onerror="(function(img, genId) { console.error(\'[IMAGE] Ошибка загрузки изображения для генерации\', genId); var container = img.closest(\'.image-container\'); var errorDiv = container ? container.querySelector(\'.image-error\') : null; if (errorDiv) { errorDiv.style.setProperty(\'display\', \'flex\', \'important\'); } img.style.display=\'none\'; })(this, ' + gen.id + ');" onload="(function(img, genId) { var container = img.closest(\'.image-container\'); var errorDiv = container ? container.querySelector(\'.image-error\') : null; if (errorDiv) { errorDiv.style.setProperty(\'display\', \'none\', \'important\'); } img.style.display=\'block\'; })(this, ' + gen.id + ');">';
             } else {
+                const attemptHintHtml = (gen.status === 'pending' || gen.status === 'running')
+                    ? '<p class="mt-2 mb-0 text-info small">Попытка ' + attemptNumber + '/' + maxRetries + '</p>'
+                    : '';
                 const placeholderInner = gen.status === 'failed'
                     ? '<div class="text-center"><i class="fas fa-exclamation-triangle text-danger" style="font-size: 3rem;"></i><p class="mt-3 mb-0 text-light fw-bold">Ошибка генерации</p><p class="mt-2 mb-0 text-danger small">' + (gen.error_message || 'Не удалось сгенерировать изображение').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;') + '</p></div>'
-                    : '<div class="text-center"><div class="spinner-border text-warning" role="status" style="width: 3rem; height: 3rem;"><span class="visually-hidden">Загрузка...</span></div><p class="mt-3 mb-0 text-light fw-bold">' + (gen.status === 'pending' ? 'В очереди...' : gen.status === 'running' ? 'Генерируется...' : 'Ошибка') + '</p></div>';
+                    : '<div class="text-center"><div class="spinner-border text-warning" role="status" style="width: 3rem; height: 3rem;"><span class="visually-hidden">Загрузка...</span></div><p class="mt-3 mb-0 text-light fw-bold">' + (gen.status === 'pending' ? 'В очереди...' : gen.status === 'running' ? 'Генерируется...' : 'Ошибка') + '</p>' + attemptHintHtml + '</div>';
                 imageBlock = '<div class="position-absolute top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center" style="z-index: 1; background: linear-gradient(135deg, #1a1a2e 0%, #252547 100%); border-radius: 0 0 12px 12px;">' + placeholderInner + '</div>';
             }
             const infoBtnHtml = (gen.status === 'completed' || gen.status === 'failed') ? '<button class="btn btn-sm btn-link text-white p-1 info-btn" data-gen-id="' + gen.id + '" title="Параметры генерации" style="opacity: 0.9; pointer-events: auto !important; cursor: pointer; z-index: 10; position: relative;"><i class="fas fa-info-circle" style="font-size: 0.75rem;"></i></button>' : '';
             const daysLeftHtml = (gen.status === 'completed' && gen.daysLeft !== undefined && gen.daysLeft > 0) ? '<span class="badge bg-warning text-dark" style="font-size: 0.65rem; padding: 0.2rem 0.4rem; font-weight: 600; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);">Осталось: ' + gen.daysLeft + ' ' + (gen.daysText || '') + '</span>' : '';
             const downloadBtnHtml = (gen.status === 'completed' && gen.result_url) ? '<button class="btn btn-icon-only btn-download" onclick="event.stopPropagation(); event.preventDefault(); downloadImage(\'' + gen.result_url.replace(/'/g, "\\'") + '\', \'' + (gen.prompt || '').substring(0, 30).replace(/'/g, "\\'").replace(/"/g, '&quot;') + '\')" title="Скачать изображение" style="width: 28px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center; border-radius: 4px; border: none; font-size: 0.7rem; pointer-events: auto; cursor: pointer; z-index: 10; position: relative;"><i class="fas fa-download"></i></button>' : '';
+            const fallbackBtnHtml = (gen.status === 'failed' && gen.fallback_model)
+                ? '<button class="btn btn-icon-only btn-fallback" onclick="event.stopPropagation(); event.preventDefault(); retryGenerationWithFallback(' + gen.id + ', \'' + String(gen.fallback_model).replace(/'/g, "\\'") + '\')" title="Перезапустить на ' + String(gen.fallback_model).replace(/"/g, '&quot;') + '" style="width: 28px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center; border-radius: 4px; border: none; font-size: 0.7rem; pointer-events: auto; cursor: pointer; z-index: 10; position: relative; background: #f59e0b; color: #111;"><i class="fas fa-rotate-right"></i></button>'
+                : '';
             const statusBg = gen.status === 'completed' ? 'linear-gradient(135deg, rgba(74, 85, 104, 0.7) 0%, rgba(72, 187, 120, 0.5) 100%)' : gen.status === 'failed' ? 'linear-gradient(135deg, rgba(74, 85, 104, 0.7) 0%, rgba(229, 62, 62, 0.5) 100%)' : 'linear-gradient(135deg, rgba(74, 85, 104, 0.7) 0%, rgba(102, 126, 234, 0.5) 100%)';
             const statusBorder = gen.status === 'completed' ? 'rgba(72, 187, 120, 0.6)' : gen.status === 'failed' ? 'rgba(229, 62, 62, 0.6)' : 'rgba(102, 126, 234, 0.6)';
             const statusText = gen.status === 'completed' ? 'Завершено' : gen.status === 'running' ? 'Генерируется' : gen.status === 'pending' ? 'В очереди' : 'Ошибка';
@@ -1865,6 +1874,7 @@ async function loadGallery() {
                 '    <p class="text-light mb-2 small prompt-text" style="font-size: 0.7225rem; line-height: 1.19; padding: 0.5rem; border-radius: 4px; max-width: 100%; overflow-x: auto; overflow-y: hidden; white-space: nowrap;">' + promptEscaped + '</p>',
                 '    <div class="d-flex gap-2 justify-content-center align-items-center">',
                 downloadBtnHtml,
+                fallbackBtnHtml,
                 '      <button class="btn btn-icon-only btn-edit" onclick="event.stopPropagation(); event.preventDefault(); editGeneration(' + gen.id + ')" title="Редактировать" style="width: 28px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center; border-radius: 4px; border: none; font-size: 0.7rem; pointer-events: auto; cursor: pointer; z-index: 10; position: relative;"><i class="fas fa-edit"></i></button>',
                 '      <button class="btn btn-icon-only btn-delete" onclick="event.stopPropagation(); event.preventDefault(); deleteGeneration(' + gen.id + ')" title="Удалить" style="width: 28px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center; border-radius: 4px; border: none; font-size: 0.7rem; pointer-events: auto; cursor: pointer; z-index: 10; position: relative;"><i class="fas fa-trash"></i></button>',
                 '    </div>',
@@ -1901,6 +1911,7 @@ async function loadGallery() {
                         if (!e.target.closest('.info-btn') && 
                             !e.target.closest('.btn-edit') && 
                             !e.target.closest('.btn-delete') && 
+                            !e.target.closest('.btn-fallback') &&
                             !e.target.closest('.btn-download') && 
                             !e.target.closest('.prompt-and-buttons-overlay') &&
                             !e.target.closest('.generation-status-badge')) {
@@ -2226,6 +2237,69 @@ async function editGeneration(id) {
         document.querySelector('.col-lg-4').scrollIntoView({ behavior: 'smooth', block: 'start' });
         showToast('Форма заполнена параметрами генерации', 'success');
 
+    } catch (error) {
+        showToast(`Ошибка: ${error.message}`, 'error');
+    }
+}
+
+// Быстрый перезапуск на fallback-модели (в 1 клик из карточки ошибки)
+async function retryGenerationWithFallback(id, fallbackModel) {
+    if (!fallbackModel) {
+        showToast('Fallback-модель не указана', 'error');
+        return;
+    }
+
+    if (!authToken) {
+        showToast('Требуется аутентификация', 'error');
+        return;
+    }
+
+    const apiKey = getApiKey();
+    if (!apiKey || apiKey.trim() === '') {
+        showToast('Введите API ключ Replicate в настройках', 'error');
+        return;
+    }
+
+    try {
+        // Берем параметры прошлой генерации
+        const sourceResp = await fetch(`${API_URL}/images/${id}`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        if (!sourceResp.ok) {
+            throw new Error('Не удалось загрузить параметры исходной генерации');
+        }
+        const src = await sourceResp.json();
+
+        const payload = {
+            prompt: src.prompt || '',
+            negative_prompt: src.negative_prompt || null,
+            generation_mode: src.generation_mode || 'text-to-image',
+            model_name: fallbackModel,
+            resolution: src.resolution || '1K',
+            aspect_ratio: src.aspect_ratio || '1:1',
+            guidance_scale: Number.isFinite(Number(src.guidance_scale)) ? Number(src.guidance_scale) : 7.5,
+            num_inference_steps: Number.isFinite(Number(src.num_inference_steps)) ? Number(src.num_inference_steps) : 50,
+            seed: src.seed ?? null,
+            reference_images: Array.isArray(src.reference_images) ? src.reference_images : [],
+            api_key: apiKey
+        };
+
+        const resp = await fetch(`${API_URL}/images/generate`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.detail || `Ошибка запуска на модели ${fallbackModel}`);
+        }
+
+        showToast(`Запущено на fallback-модели: ${fallbackModel}`, 'success');
+        await loadGallery();
     } catch (error) {
         showToast(`Ошибка: ${error.message}`, 'error');
     }

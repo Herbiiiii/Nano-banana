@@ -76,6 +76,9 @@ class ImageResponse(BaseModel):
     created_at: datetime
     error_message: Optional[str] = None
     model_name: Optional[str] = None  # Модель, использованная для генерации
+    retry_count: Optional[int] = 0  # Количество уже выполненных ретраев
+    max_retries: Optional[int] = 5  # Максимум ретраев для текущей генерации
+    fallback_model: Optional[str] = None  # Рекомендуемая fallback-модель для быстрого перезапуска
     
     class Config:
         from_attributes = True
