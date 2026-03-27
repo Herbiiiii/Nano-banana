@@ -830,10 +830,24 @@ class ReplicateService:
             
             logger.error(f"[REPLICATE] Итоговое сообщение об ошибке для пользователя: {user_friendly}")
             
+            # Явный флаг для backend-ретраев: не зависит от локализации сообщения пользователю.
+            is_retryable = any(
+                key in lower_msg
+                for key in [
+                    "e003",
+                    "rate limit",
+                    "ratelimit",
+                    "429",
+                    "high demand",
+                    "too many requests",
+                ]
+            )
+
             return {
                 "success": False,
                 "image_url": None,
                 "image_data": None,
                 "error": user_friendly,
+                "retryable": is_retryable,
             }
 

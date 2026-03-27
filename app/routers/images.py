@@ -312,8 +312,10 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                     error_message = str(error_message)
 
                 # Проверяем, является ли ошибка временной (rate limit / high demand)
+                # Приоритет у явного флага из ReplicateService, чтобы ретраи не зависели от текста user-friendly сообщения.
                 lower_err = error_message.lower()
-                is_retryable = (
+                service_retryable = bool(result.get("retryable"))
+                is_retryable = service_retryable or (
                     "e003" in lower_err
                     or "high demand" in lower_err
                     or "429" in lower_err
