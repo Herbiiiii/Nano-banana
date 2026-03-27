@@ -700,6 +700,27 @@ class ReplicateService:
             # Базовый текст из исключения
             raw_error = str(e)
             error_message = raw_error
+
+            # Для ModelError от replicate SDK часто str(e) пустой.
+            # Пытаемся извлечь деталь ошибки из prediction/error.
+            if isinstance(e, ModelError):
+                try:
+                    prediction = getattr(e, "prediction", None)
+                    if prediction:
+                        # В большинстве случаев причина лежит в prediction.error
+                        pred_error = getattr(prediction, "error", None)
+                        if pred_error:
+                            error_message = str(pred_error)
+                        else:
+                            # Фолбэк: сериализуем prediction целиком для диагностики
+                            error_message = str(prediction)
+                    elif not error_message:
+                        # Последний фолбэк: repr исключения
+                        error_message = repr(e)
+                except Exception as parse_error:
+                    logger.warning(f"[REPLICATE] Не удалось извлечь детали ModelError: {parse_error}")
+                    if not error_message:
+                        error_message = repr(e)
             
             # Специальная обработка ошибки 499 "Client Closed Request"
             if "499" in error_message or "client closed request" in error_message.lower():
@@ -717,7 +738,17 @@ class ReplicateService:
             if hasattr(e, "message"):
                 error_message = str(e.message)
             elif hasattr(e, "args") and len(e.args) > 0:
-                error_message = str(e.args[0])
+                arg0 = e.args[0]
+                # Для ModelError args[0] иногда это объект prediction.
+                # В таком случае лучше брать поле error.
+                if isinstance(e, ModelError):
+                    pred_error = getattr(arg0, "error", None)
+                    if pred_error:
+                        error_message = str(pred_error)
+                    elif not error_message:
+                        error_message = str(arg0)
+                else:
+                    error_message = str(arg0)
             
             # Собираем дополнительные детали (cause / context)
             error_details = []
@@ -729,6 +760,10 @@ class ReplicateService:
                 error_details.append(f"Контекст: {context_str}")
             
             # Классификация ошибки для пользователя
+            # Нормализуем пустую строку после всех попыток извлечения
+            if not error_message or (isinstance(error_message, str) and not error_message.strip()):
+                error_message = "Не удалось получить текст ошибки от Replicate API"
+
             lower_msg = (error_message or "").lower()
             user_friendly = error_message or "Неизвестная ошибка генерации"
             
