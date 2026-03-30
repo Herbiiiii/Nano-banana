@@ -1,5 +1,5 @@
 """
-Роутер для генерации изображений через Nano Banana Pro (Replicate API)
+Роутер для генерации изображений: Replicate или Banana Lab (по префиксу API ключа).
 """
 from concurrent.futures import ThreadPoolExecutor
 from typing import Annotated, Optional, List
@@ -10,6 +10,8 @@ import logging
 import uuid
 from app.models.schemas import ImageGenerationRequest, ImageGenerationResponse, ImageResponse
 from app.services.ReplicateService import ReplicateService
+from app.services.BananalabService import BananalabService, SUPPORTED_BANANALAB_FRONTEND_MODELS
+from app.services.image_api_provider import infer_image_api_provider
 from app.services.MinioService import MinioService
 from app.services.DBService import db_service
 from app.services.AuthService import auth_service
@@ -60,15 +62,15 @@ def _extract_minio_path_from_url(url: str, bucket: str) -> Optional[str]:
     except Exception:
         return None
 
-def get_user_replicate_key(user_id: int, api_key_from_request: Optional[str] = None) -> str:
+def get_user_generation_api_key(user_id: int, api_key_from_request: Optional[str] = None) -> str:
     """
-    Получает API ключ Replicate из запроса пользователя.
-    ВАЖНО: Ключи пользователей НЕ сохраняются в БД для безопасности.
-    Каждый пользователь должен использовать свой ключ.
+    API ключ из запроса (Replicate r8_… или Banana Lab nb_…).
+    Ключи не сохраняются в БД.
     """
-    # Используем только ключ из запроса - никаких fallback на глобальный ключ
     if not api_key_from_request or not api_key_from_request.strip():
-        raise ValueError("API ключ Replicate не указан. Пожалуйста, введите свой ключ Replicate API в настройках.")
+        raise ValueError(
+            "API ключ не указан. Введите ключ Replicate (r8_…) или Banana Lab (nb_…) в настройках."
+        )
     return api_key_from_request.strip()
 
 def process_generation_async(generation_id: int, user_id: int, request_data: dict):
@@ -89,15 +91,21 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
             api_key_from_request = request_data.get('api_key')
             logger.info(f"[GENERATION] В process_generation_async: ключ из запроса: {'передан' if api_key_from_request else 'не передан'}")
             if not api_key_from_request or not api_key_from_request.strip():
-                raise ValueError("API ключ Replicate не указан. Пожалуйста, введите свой ключ Replicate API в настройках.")
-            api_key = get_user_replicate_key(user_id, api_key_from_request)
-            
-            # Создаем сервис Replicate и генерируем изображение
-            # Обрабатываем ошибки аутентификации и другие ошибки
+                raise ValueError(
+                    "API ключ не указан. Введите ключ Replicate или Banana Lab в настройках."
+                )
+            api_key = get_user_generation_api_key(user_id, api_key_from_request)
+            provider = infer_image_api_provider(api_key)
+            provider_label = "Banana Lab" if provider == "bananalab" else "Replicate"
+
+            # Обрабатываем ошибки инициализации клиента
             try:
-                replicate_service = ReplicateService(api_token=api_key)
+                if provider == "bananalab":
+                    generation_service = BananalabService(api_key=api_key)
+                else:
+                    generation_service = ReplicateService(api_token=api_key)
             except Exception as init_error:
-                error_msg = f"Ошибка инициализации Replicate клиента: {str(init_error)}"
+                error_msg = f"Ошибка инициализации клиента ({provider_label}): {str(init_error)}"
                 logger.error(f"[GENERATION] {error_msg}")
                 generation.status = "failed"
                 generation.completed_at = datetime.utcnow()
@@ -124,10 +132,18 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                             # Если в БД тоже нет, используем по умолчанию
                             model_name = "nano-banana-pro"
                 
-                logger.info(f"[GENERATION] Используется модель: {model_name} для генерации {generation_id}")
+                if provider == "bananalab" and model_name not in SUPPORTED_BANANALAB_FRONTEND_MODELS:
+                    raise ValueError(
+                        f"Модель «{model_name}» недоступна с ключом Banana Lab. "
+                        "Выберите Nano Banana Pro, Nano Banana 2 или Nano Banana, либо используйте ключ Replicate."
+                    )
+
+                logger.info(
+                    f"[GENERATION] Провайдер {provider_label}, модель {model_name}, генерация {generation_id}"
+                )
                 
                 # Генерируем изображение
-                result = replicate_service.generate_image(
+                result = generation_service.generate_image(
                     prompt=request_data['prompt'],
                     negative_prompt=request_data.get('negative_prompt'),
                     resolution=request_data.get('resolution', '1K'),
@@ -143,14 +159,12 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                 # Улучшенное извлечение деталей ошибки
                 error_msg = str(gen_error)
                 
-                # Если это специфичная ошибка Replicate, извлекаем больше деталей
                 if hasattr(gen_error, 'message'):
                     error_msg = str(gen_error.message)
                 elif hasattr(gen_error, 'args') and len(gen_error.args) > 0:
                     error_msg = str(gen_error.args[0])
                 
-                # Добавляем префикс для ясности
-                full_error_msg = f"Ошибка генерации через Replicate API: {error_msg}"
+                full_error_msg = f"Ошибка генерации ({provider_label}): {error_msg}"
                 
                 logger.error(f"[GENERATION] {full_error_msg}", exc_info=True)
                 generation.status = "failed"
@@ -421,19 +435,16 @@ async def generate_image(
     """
     Генерация изображения через Nano Banana Pro
     
-    Требует API ключ Replicate (либо глобальный, либо пользовательский)
+    Требует API ключ: Replicate (r8_…) или Banana Lab (nb_…).
     """
     try:
-        # Получаем API ключ из запроса (обязательно)
-        # ВАЖНО: Ключи пользователей НЕ сохраняются в БД для безопасности
-        # Каждый пользователь должен использовать свой ключ
         logger.info(f"[GENERATION] API ключ из запроса: {'передан' if request.api_key else 'не передан'}")
         if not request.api_key or not request.api_key.strip():
             raise HTTPException(
                 status_code=400,
-                detail="API ключ Replicate не указан. Пожалуйста, введите свой ключ Replicate API в настройках."
+                detail="API ключ не указан. Введите ключ Replicate (r8_…) или Banana Lab (nb_…) в настройках.",
             )
-        api_key = get_user_replicate_key(user.user_id, request.api_key)
+        api_key = get_user_generation_api_key(user.user_id, request.api_key)
         
         # Проверяем лимиты активных генераций по API ключу
         # Создаем хеш API ключа для группировки (первые 8 символов для идентификации)
@@ -782,11 +793,18 @@ async def get_available_models():
         models[key] = {
             "display_name": model_info["display_name"],
             "description": model_info["description"],
-            "name": model_info["name"]
+            "name": model_info["name"],
+            "providers": (
+                ["replicate", "bananalab"]
+                if key in SUPPORTED_BANANALAB_FRONTEND_MODELS
+                else ["replicate"]
+            ),
         }
     return {
         "models": models,
-        "default_model": ReplicateService.DEFAULT_MODEL
+        "default_model": ReplicateService.DEFAULT_MODEL,
+        "bananalab_key_prefix": "nb_",
+        "replicate_key_prefix_hint": "r8_",
     }
 
 @router.delete("/{generation_id}")

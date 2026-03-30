@@ -35,7 +35,7 @@ class UserResponse(BaseModel):
     class Config:
         from_attributes = True
 
-# API ключ Replicate
+# API ключ провайдера (Replicate или Banana Lab), локально на клиенте
 class ReplicateApiKeyRequest(BaseModel):
     api_key: str
 
@@ -54,7 +54,7 @@ class ImageGenerationRequest(BaseModel):
     num_inference_steps: int = 50
     seed: Optional[int] = None
     reference_images: Optional[List[str]] = None  # URLs или base64 изображений
-    api_key: Optional[str] = None  # API ключ Replicate (не сохраняется в БД, используется только в сессии)
+    api_key: Optional[str] = None  # Replicate (r8_…) или Banana Lab (nb_…), не сохраняется в БД
     model_name: Optional[str] = None  # Имя модели (например, "nano-banana-pro", "gemini-2.5-flash-image")
 
 class ImageGenerationResponse(BaseModel):

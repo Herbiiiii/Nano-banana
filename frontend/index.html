@@ -6,8 +6,8 @@
     
     <!-- Основные мета-теги -->
     <title>Nano Banana Pro - Генератор изображений через AI</title>
-    <meta name="description" content="Мощный генератор изображений на основе искусственного интеллекта. Создавайте уникальные изображения с помощью Replicate API. Поддержка text-to-image и image-to-image генерации с референсными изображениями.">
-    <meta name="keywords" content="генератор изображений, AI, искусственный интеллект, Replicate, text-to-image, image-to-image">
+    <meta name="description" content="Генератор изображений на основе ИИ через Replicate или Banana Lab (Nano Banana). Text-to-image и image-to-image с референсами.">
+    <meta name="keywords" content="генератор изображений, AI, Replicate, Banana Lab, Nano Banana, text-to-image, image-to-image">
     <meta name="author" content="Nano Banana Pro">
     
     <!-- Favicon -->
@@ -19,7 +19,7 @@
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://ooneclickk.ru/">
     <meta property="og:title" content="Nano Banana Pro - Генератор изображений через AI">
-    <meta property="og:description" content="Мощный генератор изображений на основе искусственного интеллекта. Создавайте уникальные изображения с помощью Replicate API. Поддержка text-to-image и image-to-image генерации.">
+    <meta property="og:description" content="Генератор изображений через Replicate или Banana Lab (Nano Banana).">
     <meta property="og:image" content="https://ooneclickk.ru/meta.jpg">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
@@ -32,7 +32,7 @@
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:url" content="https://ooneclickk.ru/">
     <meta name="twitter:title" content="Nano Banana Pro - Генератор изображений через AI">
-    <meta name="twitter:description" content="Мощный генератор изображений на основе искусственного интеллекта. Создавайте уникальные изображения с помощью Replicate API.">
+    <meta name="twitter:description" content="Генератор изображений через Replicate или Banana Lab.">
     <meta name="twitter:image" content="https://ooneclickk.ru/meta.jpg">
     
     <!-- Bootstrap 5 CSS -->
@@ -393,7 +393,7 @@
         <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header bg-warning text-dark">
-                    <h5 class="modal-title"><i class="fas fa-key me-2"></i>API Ключ Replicate</h5>
+                    <h5 class="modal-title"><i class="fas fa-key me-2"></i>API ключ генерации</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
@@ -404,15 +404,18 @@
                     </div>
                     <div class="alert alert-info">
                         <i class="fas fa-info-circle me-2"></i>
-                        Укажите ваш API ключ Replicate. Получить можно на 
-                        <a href="https://replicate.com/account/api-tokens" target="_blank" class="alert-link">replicate.com/account/api-tokens</a>
-                        <br><small>Если не укажете свой ключ, будет использован глобальный ключ из настроек сервера.</small>
+                        <strong>Replicate:</strong> ключ с префиксом <code>r8_</code> — 
+                        <a href="https://replicate.com/account/api-tokens" target="_blank" class="alert-link">replicate.com/account/api-tokens</a>.
+                        <br>
+                        <strong>Banana Lab:</strong> ключ с префиксом <code>nb_</code> — кабинет
+                        <a href="https://api.bananalab.pw/client" target="_blank" class="alert-link">api.bananalab.pw/client</a>.
+                        <br><small>Провайдер выбирается автоматически по префиксу ключа. Ключ не отправляется на наш сервер для хранения — только в запросе генерации.</small>
                     </div>
                     <form id="apiKeyForm">
                         <div class="mb-3">
-                            <label for="apiKeyInput" class="form-label">API Ключ Replicate</label>
-                            <input type="password" class="form-control" id="apiKeyInput" placeholder="r8_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
-                            <small class="form-text text-muted">Ключ начинается с "r8_"</small>
+                            <label for="apiKeyInput" class="form-label">API ключ</label>
+                            <input type="password" class="form-control" id="apiKeyInput" placeholder="r8_... или nb_...">
+                            <small class="form-text text-muted">Replicate: <code>r8_</code> · Banana Lab: <code>nb_</code></small>
                         </div>
                         <div class="d-flex gap-2">
                             <button type="submit" class="btn btn-warning flex-fill">

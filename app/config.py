@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     
     # Replicate API (глобальный ключ, если пользователь не указал свой)
     REPLICATE_API_TOKEN: str = Field("", env="REPLICATE_API_TOKEN")
+
+    # Banana Lab (Nano Banana HTTP API)
+    BANANALAB_BASE_URL: str = Field("https://api.bananalab.pw", env="BANANALAB_BASE_URL")
     
     # Performance
     # По умолчанию запускаем только одну генерацию одновременно, чтобы уменьшить вероятность E003/rate-limit

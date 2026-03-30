@@ -11,6 +11,31 @@ let lastGalleryHash = null; // Хеш последнего состояния г
 // Модели Imagen: только описание, соотношение сторон, seed (без разрешения, шагов, guidance, негативного промпта, референсов)
 const IMAGEN_MODEL_IDS = ['imagen-4', 'imagen-4-fast', 'imagen-4-ultra'];
 
+// С ключом Banana Lab (nb_…) доступны только Nano Banana — не Replicate-only модели
+const BANANALAB_UNSUPPORTED_MODEL_IDS = ['imagen-4', 'imagen-4-fast', 'imagen-4-ultra', 'gemini-2.5-flash-image'];
+
+function isBananalabKey() {
+    const k = getApiKey();
+    return !!(k && String(k).trim().startsWith('nb_'));
+}
+
+/** Отключает недоступные для Banana Lab модели; при несовместимом выборе сбрасывает на Pro */
+function refreshModelSelectForCurrentKey() {
+    const select = document.getElementById('modelName');
+    if (!select) return;
+    const bl = isBananalabKey();
+    for (let i = 0; i < select.options.length; i++) {
+        const opt = select.options[i];
+        opt.disabled = bl && BANANALAB_UNSUPPORTED_MODEL_IDS.includes(opt.value);
+    }
+    if (bl && BANANALAB_UNSUPPORTED_MODEL_IDS.includes(select.value)) {
+        select.value = 'nano-banana-pro';
+        setSelectedModel(select.value);
+        showToast('Для ключа Banana Lab доступны только Nano Banana (Pro / 2 / classic). Модель сброшена на Pro.', 'info');
+    }
+    updateParamsForModel();
+}
+
 function isImagenModel() {
     const sel = document.getElementById('modelName');
     return sel && IMAGEN_MODEL_IDS.includes(sel.value);
@@ -777,6 +802,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     updateParamsForModel();
+    refreshModelSelectForCurrentKey();
     
     // Обновление галереи каждые 5 секунд (только если есть активные генерации)
     setInterval(async () => {
@@ -1317,7 +1343,7 @@ async function handleGenerate(e) {
         // ВАЖНО: Ключи НЕ сохраняются на сервере, передаются только в запросе
         const apiKey = getApiKey();
         if (!apiKey || apiKey.trim() === '') {
-            showToast('Ошибка: API ключ не введен. Пожалуйста, введите ключ Replicate API в настройках.', 'error');
+            showToast('Ошибка: API ключ не введен. Укажите Replicate (r8_…) или Banana Lab (nb_…) в настройках.', 'error');
             spinner.classList.add('d-none');
             submitText.textContent = '🎨 Сгенерировать изображение';
             sendButton.disabled = false;
@@ -1626,6 +1652,7 @@ async function handleApiKeySave(e) {
     }
     
     checkApiKeyStatus();
+    refreshModelSelectForCurrentKey();
 }
 
 // Удаление API ключа
@@ -1640,6 +1667,7 @@ async function handleApiKeyDelete() {
         showToast('Ошибка удаления ключа', 'error');
     }
     checkApiKeyStatus();
+    refreshModelSelectForCurrentKey();
 }
 
 // Выход
@@ -2256,7 +2284,7 @@ async function retryGenerationWithFallback(id, fallbackModel) {
 
     const apiKey = getApiKey();
     if (!apiKey || apiKey.trim() === '') {
-        showToast('Введите API ключ Replicate в настройках', 'error');
+        showToast('Введите API ключ (Replicate или Banana Lab) в настройках', 'error');
         return;
     }
 

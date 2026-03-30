@@ -12,6 +12,8 @@ import time
 from replicate.exceptions import ModelError, ReplicateError
 import re
 
+from app.services.generation_prompt import enhance_prompt_for_image_generation
+
 logger = logging.getLogger(__name__)
 
 class ReplicateService:
@@ -252,8 +254,8 @@ class ReplicateService:
                     input_params["seed"] = int(seed)
             
             # Обработка референсных изображений (Imagen 4 не использует image_input в том же формате — не передаём)
+            processed_images: List = []
             if reference_images and len(reference_images) > 0 and current_model_key not in ("imagen-4", "imagen-4-fast", "imagen-4-ultra"):
-                processed_images = []
                 for idx, img in enumerate(reference_images[:14], 1):  # Максимум 14 изображений
                     try:
                         if isinstance(img, str):
@@ -312,93 +314,13 @@ class ReplicateService:
             # Nano Banana Pro поддерживает только стандартные соотношения
             # Пользовательские соотношения конвертируются в ближайшее стандартное на фронтенде
             
-            # Улучшение промпта для text-to-image (если нет референсов)
-            if not reference_images or len(reference_images) == 0:
-                # Для text-to-image всегда улучшаем промпт, чтобы модель понимала что нужно генерировать изображение
-                prompt_lower = prompt.lower().strip()
-                
-                # Список слов, которые явно указывают на генерацию изображения
-                image_generation_keywords = [
-                    'generate', 'создать', 'сделать', 'сгенерируй', 'сгенерировать',
-                    'изображение', 'image', 'картинка', 'picture', 'фото', 'photo',
-                    'draw', 'рисовать', 'нарисовать', 'нарисуй',
-                    'create', 'создай', 'создавать',
-                    'design', 'дизайн', 'спроектировать',
-                    'icon', 'иконка', 'favicon', 'фавикон',
-                    'logo', 'логотип', 'лого'
-                ]
-                
-                # Проверяем есть ли явные указания на генерацию изображения
-                has_generation_keyword = any(keyword in prompt_lower for keyword in image_generation_keywords)
-                
-                # Проверяем начинается ли промпт с указания на генерацию
-                starts_with_generation = any(prompt_lower.startswith(keyword) for keyword in ['generate', 'создать', 'сделать', 'сгенерируй', 'create', 'draw', 'нарисуй'])
-                
-                # Если нет явных указаний на генерацию изображения, добавляем префикс
-                if not has_generation_keyword or not starts_with_generation:
-                    # Если промпт уже начинается с "Generate" или похожего, не дублируем
-                    if not prompt_lower.startswith(('generate', 'create', 'draw', 'make', 'создать', 'сделать', 'нарисовать')):
-                        enhanced_prompt = f"Generate an image of {prompt}"
-                        logger.info(f"[REPLICATE] Промпт улучшен для text-to-image: {enhanced_prompt[:100]}...")
-                        input_params["prompt"] = enhanced_prompt
-                    else:
-                        # Промпт уже начинается с команды генерации, но может быть недостаточно четким
-                        # Добавляем уточнение если нужно
-                        if 'image' not in prompt_lower and 'изображение' not in prompt_lower and 'картинка' not in prompt_lower:
-                            enhanced_prompt = f"{prompt}, high quality image"
-                            logger.info(f"[REPLICATE] Промпт улучшен для text-to-image (добавлено уточнение): {enhanced_prompt[:100]}...")
-                            input_params["prompt"] = enhanced_prompt
-                        else:
-                            input_params["prompt"] = prompt
-                else:
-                    input_params["prompt"] = prompt
-            
-            # Улучшение промпта для референсных изображений
             if reference_images and len(reference_images) > 0:
-                prompt_lower = prompt.lower()
-                
-                # Определяем количество референсов
-                num_refs = len(processed_images) if processed_images else len(reference_images)
-                
-                # Улучшаем промпт с указанием номеров референсов
-                # Заменяем упоминания "референс 1", "реф 1", "референса 1", "реф1" и т.д. на понятные инструкции
-                enhanced_prompt = prompt
-                
-                # Паттерны для поиска упоминаний референсов
-                import re
-                ref_patterns = [
-                    (r'реф\s*(\d+)', r'reference image \1'),
-                    (r'референс\s*(\d+)', r'reference image \1'),
-                    (r'референса\s*(\d+)', r'reference image \1'),
-                    (r'референсом\s*(\d+)', r'reference image \1'),
-                    (r'ref\s*(\d+)', r'reference image \1'),
-                ]
-                
-                for pattern, replacement in ref_patterns:
-                    enhanced_prompt = re.sub(pattern, replacement, enhanced_prompt, flags=re.IGNORECASE)
-                
-                # Добавляем инструкции для работы с несколькими референсами
-                if num_refs > 1:
-                    ref_instructions = (
-                        f"IMPORTANT: You have {num_refs} reference images. "
-                        f"When the prompt mentions 'reference image 1' or 'ref 1', use the FIRST reference image. "
-                        f"When it mentions 'reference image 2' or 'ref 2', use the SECOND reference image. "
-                        f"And so on for reference images 3 and 4. "
-                        f"Follow the prompt instructions carefully for which reference to use for which element. "
-                    )
-                    enhanced_prompt = ref_instructions + enhanced_prompt
-                else:
-                    # Для одного референса добавляем стандартные инструкции
-                    if not any(phrase in prompt_lower for phrase in ["based on", "using the reference", "preserve", "reference image"]):
-                        enhanced_prompt = (
-                            f"STRICT INSTRUCTIONS: Use the reference image as the EXACT base. "
-                            f"Preserve EVERYTHING: exact same person, identical facial features, same age, "
-                            f"same gender, same body type, same pose, same clothing, same background. "
-                            f"ONLY modify according to: {enhanced_prompt}."
-                        )
-                
-                input_params["prompt"] = enhanced_prompt
-                logger.info(f"[REPLICATE] Промпт улучшен для {num_refs} референсных изображений")
+                num_refs_effective = len(processed_images) if processed_images else len(reference_images)
+            else:
+                num_refs_effective = 0
+            input_params["prompt"] = enhance_prompt_for_image_generation(
+                prompt, reference_images, num_refs_effective
+            )
             
             # Вызов API с повторными попытками при временных ошибках (rate limit / high demand)
             start_time = time.time()
