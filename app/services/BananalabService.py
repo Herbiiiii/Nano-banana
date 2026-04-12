@@ -67,6 +67,7 @@ def _optimize_image_for_api(image_data: bytes, ref_index: int) -> bytes:
 
 class BananalabService:
     TIMEOUT = 900
+    JOB_TIMEOUT_SECONDS = 240
     MAX_RETRIES = 3
     RETRY_DELAY_SECONDS = 5
     JOB_POLL_INTERVAL_SECONDS = 1.5
@@ -93,7 +94,7 @@ class BananalabService:
         if not status_url:
             return initial
 
-        deadline = time.time() + self.TIMEOUT
+        deadline = time.time() + self.JOB_TIMEOUT_SECONDS
         current: Any = initial
         last_logged: Optional[str] = None
 
@@ -102,6 +103,23 @@ class BananalabService:
                 break
 
             st = self._job_status_normalized(current)
+            # Banana Lab иногда сообщает о паузе модели текстом, не меняя status на failed.
+            diag = (
+                f"{current.get('error') or ''} "
+                f"{current.get('message') or ''} "
+                f"{current.get('detail') or ''}"
+            ).lower()
+            if "paused" in diag:
+                return {
+                    "__bananalab_job_failed__": True,
+                    "error": str(
+                        current.get("error")
+                        or current.get("message")
+                        or current.get("detail")
+                        or "Модель Banana Lab временно на паузе"
+                    ),
+                    "_raw": current,
+                }
             if st != last_logged:
                 logger.info("[BANANALAB] Задача: status=%s", current.get("status"))
                 last_logged = st

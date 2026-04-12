@@ -30,9 +30,7 @@ MAX_GENERATION_RETRIES = 5
 router = APIRouter(prefix="/images", tags=["images"])
 minio = MinioService()
 
-FALLBACK_MODEL_BY_MODEL = {
-    "nano-banana-2": "nano-banana-pro",
-}
+FALLBACK_MODEL_BY_MODEL = {}
 
 
 def get_fallback_model(model_name: Optional[str]) -> Optional[str]:
