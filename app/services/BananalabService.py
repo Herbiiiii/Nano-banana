@@ -247,29 +247,58 @@ class BananalabService:
 
         has_b64_refs = len(input_b64_list) > 0
         has_url_refs = len(input_url_list) > 0 and not has_b64_refs
-        if has_b64_refs:
-            payload: Dict[str, Any] = {
-                "prompt": final_prompt,
-                "aspect_ratio": aspect_ratio,
-                "resolution": resolution,
-                "input_images_base64": input_b64_list,
-            }
-            url = f"{self.base_url}/v1/nb2/generations"
-        elif has_url_refs:
-            payload = {
-                "prompt": final_prompt,
-                "aspect_ratio": aspect_ratio,
-                "resolution": resolution,
-                "input_images_urls": input_url_list,
-            }
-            url = f"{self.base_url}/v1/nb2/url-generations"
-        else:
-            payload = {
-                "prompt": final_prompt,
-                "aspect_ratio": aspect_ratio,
-                "resolution": resolution,
-            }
-            url = f"{self.base_url}/v1/nb2/text-generations"
+
+        def _build_request(use_url_refs: bool) -> tuple[str, Dict[str, Any]]:
+            if has_b64_refs:
+                return (
+                    f"{self.base_url}/v1/nb2/generations",
+                    {
+                        "prompt": final_prompt,
+                        "aspect_ratio": aspect_ratio,
+                        "resolution": resolution,
+                        "input_images_base64": input_b64_list,
+                    },
+                )
+            if use_url_refs and has_url_refs:
+                return (
+                    f"{self.base_url}/v1/nb2/url-generations",
+                    {
+                        "prompt": final_prompt,
+                        "aspect_ratio": aspect_ratio,
+                        "resolution": resolution,
+                        "input_images_urls": input_url_list,
+                    },
+                )
+            if has_url_refs:
+                # URL endpoint может быть выключен на аккаунте; fallback в base64.
+                fallback_b64: List[str] = []
+                for idx, img_url in enumerate(input_url_list, 1):
+                    try:
+                        r = requests.get(img_url, timeout=30)
+                        if r.status_code == 200:
+                            img_data = _optimize_image_for_api(r.content, idx)
+                            fallback_b64.append(base64.b64encode(img_data).decode("ascii"))
+                    except Exception as e:
+                        logger.warning("[BANANALAB] fallback URL->base64 не удался для ref %s: %s", idx, e)
+                return (
+                    f"{self.base_url}/v1/nb2/generations",
+                    {
+                        "prompt": final_prompt,
+                        "aspect_ratio": aspect_ratio,
+                        "resolution": resolution,
+                        "input_images_base64": fallback_b64,
+                    },
+                )
+            return (
+                f"{self.base_url}/v1/nb2/text-generations",
+                {
+                    "prompt": final_prompt,
+                    "aspect_ratio": aspect_ratio,
+                    "resolution": resolution,
+                },
+            )
+
+        url, payload = _build_request(use_url_refs=True)
         last_exc: Optional[Exception] = None
 
         for attempt in range(1, self.MAX_RETRIES + 1):
@@ -315,6 +344,26 @@ class BananalabService:
                         msg[:500],
                         _safe_response_body_for_log(body),
                     )
+                    # Авто-fallback: если URL endpoint запрещен для аккаунта, пересобираем запрос в base64 endpoint.
+                    if (
+                        url.endswith("/v1/nb2/url-generations")
+                        and resp.status_code == 403
+                        and "url" in msg.lower()
+                        and "not enabled" in msg.lower()
+                    ):
+                        logger.warning(
+                            "[BANANALAB] URL endpoint не включен для аккаунта, fallback на /v1/nb2/generations"
+                        )
+                        url, payload = _build_request(use_url_refs=False)
+                        if payload.get("input_images_base64"):
+                            continue
+                        return {
+                            "success": False,
+                            "image_url": None,
+                            "image_data": None,
+                            "error": "URL endpoint Banana Lab недоступен и fallback в base64 не удался.",
+                            "retryable": False,
+                        }
                     uf = msg
                     if retryable:
                         uf = (
