@@ -73,6 +73,7 @@ def get_user_generation_api_key(user_id: int, api_key_from_request: Optional[str
 
 def process_generation_async(generation_id: int, user_id: int, request_data: dict):
     """Асинхронная обработка генерации"""
+    started_at = datetime.utcnow()
     try:
         with db_service.get_session() as session:
             generation = session.query(Generation).filter(Generation.id == generation_id).first()
@@ -309,6 +310,8 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                 
                 generation.status = "completed"
                 generation.completed_at = datetime.utcnow()
+                total_elapsed = (generation.completed_at - started_at).total_seconds()
+                logger.info(f"[GENERATION] Генерация {generation_id} заняла {total_elapsed:.1f} сек")
             else:
                 # Генерация не удалась - сохраняем ошибку
                 # Сначала пытаемся понять, можно ли повторить генерацию (временная ошибка типа E003/429)
@@ -361,6 +364,7 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                 # Если ошибка не временная или исчерпаны попытки — помечаем как failed
                 generation.status = "failed"
                 generation.completed_at = datetime.utcnow()
+                total_elapsed = (generation.completed_at - started_at).total_seconds()
 
                 # Обрезаем слишком длинные сообщения об ошибках (максимум 2000 символов)
                 if len(error_message) > 2000:
@@ -374,7 +378,8 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
 
                 logger.error(
                     f"[GENERATION] Генерация {generation_id} завершена с ошибкой "
-                    f"после {current_retries} попыток. error_message: {error_message[:200]}..."
+                    f"после {current_retries} попыток за {total_elapsed:.1f} сек. "
+                    f"error_message: {error_message[:200]}..."
                 )
                 logger.info(f"[GENERATION] generation_metadata перед commit: {generation.generation_metadata}")
 
@@ -588,6 +593,10 @@ async def generate_image(
         
         # Запускаем асинхронную обработку
         request_data = request.dict()
+        # Для Banana Lab быстрее передавать уже сохраненные URL референсов
+        # (используется /v1/nb2/url-generations), чтобы не грузить base64 повторно.
+        if reference_image_urls:
+            request_data["reference_images"] = reference_image_urls
         executor.submit(process_generation_async, generation_id, user.user_id, request_data)
         
         logger.info(f"[GENERATION] Задача {generation_id} добавлена в очередь пользователем {user.user_id}")

@@ -54,10 +54,10 @@ def _optimize_image_for_api(image_data: bytes, ref_index: int) -> bytes:
 
 class BananalabService:
     TIMEOUT = 900
-    JOB_TIMEOUT_SECONDS = 240
+    JOB_TIMEOUT_SECONDS = 420
     MAX_RETRIES = 3
     RETRY_DELAY_SECONDS = 5
-    JOB_POLL_INTERVAL_SECONDS = 1.5
+    JOB_POLL_INTERVAL_SECONDS = 3.0
 
     def __init__(self, api_key: str, base_url: Optional[str] = None):
         if not api_key or not api_key.strip():
@@ -81,9 +81,11 @@ class BananalabService:
         if not status_url:
             return initial
 
+        poll_started_at = time.time()
         deadline = time.time() + self.JOB_TIMEOUT_SECONDS
         current: Any = initial
         last_logged: Optional[str] = None
+        job_id = initial.get("job_id")
 
         while time.time() < deadline:
             if not isinstance(current, dict):
@@ -105,10 +107,17 @@ class BananalabService:
                         or current.get("detail")
                         or "Модель Banana Lab временно на паузе"
                     ),
+                    "retryable": False,
                     "_raw": current,
                 }
             if st != last_logged:
-                logger.info("[BANANALAB] Задача: status=%s", current.get("status"))
+                elapsed = time.time() - poll_started_at
+                logger.info(
+                    "[BANANALAB] job_id=%s status=%s elapsed=%.1fs",
+                    job_id,
+                    current.get("status"),
+                    elapsed,
+                )
                 last_logged = st
 
             if st in ("completed", "succeeded", "success", "done", "finished"):
@@ -161,6 +170,7 @@ class BananalabService:
                 return {
                     "__bananalab_job_failed__": True,
                     "error": detail_from_response_body(body),
+                    "retryable": False,
                     "_raw": body,
                 }
 
@@ -170,12 +180,15 @@ class BananalabService:
                 return {
                     "__bananalab_job_failed__": True,
                     "error": f"Ответ job не JSON: {e}",
+                    "retryable": False,
                     "_raw": None,
                 }
 
+        elapsed = time.time() - poll_started_at
         return {
             "__bananalab_job_failed__": True,
-            "error": "Превышено время ожидания готовности изображения (Banana Lab)",
+            "error": f"Таймаут ожидания готовности изображения Banana Lab ({elapsed:.1f}s)",
+            "retryable": True,
             "_raw": current,
         }
 
@@ -201,6 +214,7 @@ class BananalabService:
         if model_name and model_name not in SUPPORTED_BANANALAB_FRONTEND_MODELS:
             logger.warning("[BANANALAB] Модель %s не поддерживается клиентом, игнорируем", model_name)
         input_b64_list: List[str] = []
+        input_url_list: List[str] = []
         reference_images = reference_images or []
 
         for idx, img in enumerate(reference_images[:14], 1):
@@ -212,14 +226,8 @@ class BananalabService:
                         img_data = _optimize_image_for_api(img_data, idx)
                         input_b64_list.append(base64.b64encode(img_data).decode("ascii"))
                     elif img.startswith(("http://", "https://")):
-                        r = requests.get(img, timeout=30)
-                        if r.status_code == 200:
-                            img_data = _optimize_image_for_api(r.content, idx)
-                            input_b64_list.append(base64.b64encode(img_data).decode("ascii"))
-                        else:
-                            logger.warning(
-                                "[BANANALAB] Референс %s: HTTP %s", idx, r.status_code
-                            )
+                        # Предпочитаем нативный endpoint URL-generations — быстрее, без перекодирования в base64.
+                        input_url_list.append(img)
                     else:
                         logger.warning("[BANANALAB] Референс %s: неподдерживаемая строка", idx)
                 elif hasattr(img, "read"):
@@ -229,7 +237,7 @@ class BananalabService:
             except Exception as e:
                 logger.error("[BANANALAB] Ошибка референса %s: %s", idx, e)
 
-        num_refs_effective = len(input_b64_list)
+        num_refs_effective = len(input_b64_list) + len(input_url_list)
         if reference_images and num_refs_effective == 0:
             num_refs_effective = len(reference_images)
 
@@ -237,8 +245,9 @@ class BananalabService:
             prompt, reference_images if reference_images else None, num_refs_effective
         )
 
-        has_refs = len(input_b64_list) > 0
-        if has_refs:
+        has_b64_refs = len(input_b64_list) > 0
+        has_url_refs = len(input_url_list) > 0 and not has_b64_refs
+        if has_b64_refs:
             payload: Dict[str, Any] = {
                 "prompt": final_prompt,
                 "aspect_ratio": aspect_ratio,
@@ -246,6 +255,14 @@ class BananalabService:
                 "input_images_base64": input_b64_list,
             }
             url = f"{self.base_url}/v1/nb2/generations"
+        elif has_url_refs:
+            payload = {
+                "prompt": final_prompt,
+                "aspect_ratio": aspect_ratio,
+                "resolution": resolution,
+                "input_images_urls": input_url_list,
+            }
+            url = f"{self.base_url}/v1/nb2/url-generations"
         else:
             payload = {
                 "prompt": final_prompt,
@@ -258,11 +275,12 @@ class BananalabService:
         for attempt in range(1, self.MAX_RETRIES + 1):
             try:
                 logger.info(
-                    "[BANANALAB] POST %s (попытка %s/%s), референсов=%s",
+                    "[BANANALAB] POST %s (попытка %s/%s), refs(base64)=%s refs(url)=%s",
                     url,
                     attempt,
                     self.MAX_RETRIES,
                     len(input_b64_list),
+                    len(input_url_list),
                 )
                 resp = requests.post(
                     url,
@@ -327,12 +345,13 @@ class BananalabService:
                     if isinstance(data, dict) and data.get("__bananalab_job_failed__"):
                         err_msg = str(data.get("error") or "Ошибка задачи Banana Lab")
                         low = err_msg.lower()
+                        explicit_retryable = bool(data.get("retryable"))
                         return {
                             "success": False,
                             "image_url": None,
                             "image_data": None,
                             "error": err_msg,
-                            "retryable": any(
+                            "retryable": explicit_retryable or any(
                                 x in low for x in ("timeout", "таймаут", "429", "503", "unavailable")
                             ),
                         }
