@@ -19,7 +19,7 @@ function isBananalabKey() {
     return !!(k && String(k).trim().startsWith('nb_'));
 }
 
-/** Отключает недоступные для Banana Lab модели; при несовместимом выборе сбрасывает на Pro */
+/** Для Banana Lab backend не принимает model в body: выбор модели в UI информационный. */
 function refreshModelSelectForCurrentKey() {
     const select = document.getElementById('modelName');
     if (!select) return;
@@ -29,9 +29,9 @@ function refreshModelSelectForCurrentKey() {
         opt.disabled = bl && BANANALAB_UNSUPPORTED_MODEL_IDS.includes(opt.value);
     }
     if (bl && BANANALAB_UNSUPPORTED_MODEL_IDS.includes(select.value)) {
-        select.value = 'nano-banana-pro';
+        select.value = 'nano-banana-2';
         setSelectedModel(select.value);
-        showToast('Для ключа Banana Lab доступны только Nano Banana (Pro / 2 / classic). Модель сброшена на Pro.', 'info');
+        showToast('Для ключа Banana Lab оставлены только Nano Banana модели. Выбрана Nano Banana 2.', 'info');
     }
     updateParamsForModel();
 }
@@ -69,9 +69,13 @@ function updateParamsForModel() {
         // Если не Imagen — видимость референсов по режиму (image-to-image) не меняем здесь
     }
     if (hintEl) {
-        hintEl.textContent = isImagen
-            ? 'Доступны: описание, соотношение сторон, seed. Референсы и остальные параметры не поддерживаются.'
-            : 'Доступны: все параметры (разрешение, шаги, guidance, референсы и т.д.).';
+        if (isBananalabKey()) {
+            hintEl.textContent = 'Banana Lab: используются endpoint`ы text/base64, выбор модели в UI может не влиять на backend.';
+        } else {
+            hintEl.textContent = isImagen
+                ? 'Доступны: описание, соотношение сторон, seed. Референсы и остальные параметры не поддерживаются.'
+                : 'Доступны: все параметры (разрешение, шаги, guidance, референсы и т.д.).';
+        }
     }
 }
 

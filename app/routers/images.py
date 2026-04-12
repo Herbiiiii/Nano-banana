@@ -131,9 +131,10 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                             model_name = "nano-banana-pro"
                 
                 if provider == "bananalab" and model_name not in SUPPORTED_BANANALAB_FRONTEND_MODELS:
-                    raise ValueError(
-                        f"Модель «{model_name}» недоступна с ключом Banana Lab. "
-                        "Выберите Nano Banana Pro, Nano Banana 2 или Nano Banana, либо используйте ключ Replicate."
+                    logger.warning(
+                        "[GENERATION] Для Banana Lab передана неподдерживаемая модель '%s'. "
+                        "Banana Lab endpoint не принимает model в body, значение будет проигнорировано.",
+                        model_name,
                     )
 
                 logger.info(

@@ -37,21 +37,8 @@ def _safe_response_body_for_log(body: Any) -> str:
         return str(body)[:_MAX_ERROR_BODY_LOG]
 
 
-# API Banana Lab требует min_length=1 для input_images_base64. Для чистого text-to-image
-# подставляем минимальный валидный PNG 1×1 (прозрачный пиксель).
-_TEXT_TO_IMAGE_PLACEHOLDER_PNG_B64 = (
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
-)
-
-# Внутренние ключи моделей фронтенда → slug для поля model в API.
-# Если Banana Lab изменит slug, поправьте здесь (или ответ 422 подскажет допустимые значения).
-BANANALAB_MODEL_SLUG_BY_FRONTEND: Dict[str, str] = {
-    "nano-banana-pro": "nanobanana_pro",
-    "nano-banana-2": "nanobanana_2",
-    "nano-banana": "nanobanana",
-}
-
-SUPPORTED_BANANALAB_FRONTEND_MODELS = frozenset(BANANALAB_MODEL_SLUG_BY_FRONTEND.keys())
+# По актуальной документации Banana Lab выбор модели не передается в request body.
+SUPPORTED_BANANALAB_FRONTEND_MODELS = frozenset(("nano-banana-pro", "nano-banana-2", "nano-banana"))
 
 
 def _optimize_image_for_api(image_data: bytes, ref_index: int) -> bytes:
@@ -211,15 +198,8 @@ class BananalabService:
                 "[BANANALAB] guidance/steps/seed не поддерживаются провайдером, значения отброшены"
             )
 
-        frontend_model = model_name if model_name in SUPPORTED_BANANALAB_FRONTEND_MODELS else "nano-banana-pro"
         if model_name and model_name not in SUPPORTED_BANANALAB_FRONTEND_MODELS:
-            logger.warning(
-                "[BANANALAB] Модель %s недоступна у Banana Lab, используется %s",
-                model_name,
-                frontend_model,
-            )
-
-        slug = BANANALAB_MODEL_SLUG_BY_FRONTEND[frontend_model]
+            logger.warning("[BANANALAB] Модель %s не поддерживается клиентом, игнорируем", model_name)
         input_b64_list: List[str] = []
         reference_images = reference_images or []
 
@@ -257,33 +237,31 @@ class BananalabService:
             prompt, reference_images if reference_images else None, num_refs_effective
         )
 
-        api_images_b64 = list(input_b64_list)
-        if len(api_images_b64) == 0:
-            api_images_b64.append(_TEXT_TO_IMAGE_PLACEHOLDER_PNG_B64)
-            logger.info(
-                "[BANANALAB] Нет референсов — добавлен плейсхолдер 1×1 PNG (требование API: min 1 изображение)"
-            )
-
-        payload: Dict[str, Any] = {
-            "prompt": final_prompt,
-            "aspect_ratio": aspect_ratio,
-            "resolution": resolution,
-            "input_images_base64": api_images_b64,
-            "model": slug,
-        }
-
-        url = f"{self.base_url}/v1/generations"
+        has_refs = len(input_b64_list) > 0
+        if has_refs:
+            payload: Dict[str, Any] = {
+                "prompt": final_prompt,
+                "aspect_ratio": aspect_ratio,
+                "resolution": resolution,
+                "input_images_base64": input_b64_list,
+            }
+            url = f"{self.base_url}/v1/nb2/generations"
+        else:
+            payload = {
+                "prompt": final_prompt,
+                "aspect_ratio": aspect_ratio,
+                "resolution": resolution,
+            }
+            url = f"{self.base_url}/v1/nb2/text-generations"
         last_exc: Optional[Exception] = None
 
         for attempt in range(1, self.MAX_RETRIES + 1):
             try:
                 logger.info(
-                    "[BANANALAB] POST %s (попытка %s/%s), модель=%s, слотов изображений=%s (реальных референсов %s)",
+                    "[BANANALAB] POST %s (попытка %s/%s), референсов=%s",
                     url,
                     attempt,
                     self.MAX_RETRIES,
-                    slug,
-                    len(api_images_b64),
                     len(input_b64_list),
                 )
                 resp = requests.post(
