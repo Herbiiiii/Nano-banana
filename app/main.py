@@ -283,6 +283,10 @@ async def startup_event():
     try:
         db_service.create_tables()
         logger.info("[STARTUP] База данных инициализирована")
+        # Запускаем воркер paused-очереди генераций
+        images.start_paused_queue_worker()
+        images.restore_paused_queue_from_db()
+        logger.info("[STARTUP] Воркер paused-очереди запущен")
         
         # Миграция: проставляем model_name="nano-banana-pro" для старых записей
         try:

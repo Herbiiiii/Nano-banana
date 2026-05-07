@@ -45,7 +45,7 @@ class Generation(Base):
     result_path = Column(String, nullable=True)
     result_data = Column(JSON, nullable=True)  # Метаданные изображения
     generation_metadata = Column(JSON, nullable=True)  # Дополнительные метаданные (переименовано из metadata, т.к. metadata зарезервировано в SQLAlchemy)
-    status = Column(String, default="pending")  # pending, running, completed, failed
+    status = Column(String, default="pending")  # pending, running, paused, completed, failed
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, onupdate=datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)

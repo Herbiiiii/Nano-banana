@@ -2,7 +2,10 @@
 Роутер для генерации изображений: Replicate или Banana Lab (по префиксу API ключа).
 """
 from concurrent.futures import ThreadPoolExecutor
-from typing import Annotated, Optional, List
+from collections import deque
+import threading
+import time
+from typing import Annotated, Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from starlette.requests import Request
 from datetime import datetime, timedelta
@@ -26,11 +29,16 @@ executor = ThreadPoolExecutor(max_workers=settings.MAX_WORKERS)
 
 # Максимальное количество повторных попыток генерации при временных ошибках (E003 / 429)
 MAX_GENERATION_RETRIES = 5
+PAUSED_RETRY_DELAY_SECONDS = 30
 
 router = APIRouter(prefix="/images", tags=["images"])
 minio = MinioService()
 
 FALLBACK_MODEL_BY_MODEL = {}
+paused_queue = deque()
+paused_queue_ids = set()
+paused_queue_lock = threading.Lock()
+paused_worker_started = False
 
 
 def get_fallback_model(model_name: Optional[str]) -> Optional[str]:
@@ -38,6 +46,99 @@ def get_fallback_model(model_name: Optional[str]) -> Optional[str]:
     if not model_name:
         return None
     return FALLBACK_MODEL_BY_MODEL.get(model_name)
+
+
+def _is_paused_error(error_message: str) -> bool:
+    if not error_message:
+        return False
+    lower_err = error_message.lower()
+    return (
+        "is paused" in lower_err
+        or "model is paused" in lower_err
+        or ("project or nanobanana" in lower_err and "try again later" in lower_err)
+    )
+
+
+def enqueue_paused_generation(generation_id: int, user_id: int, request_data: dict, prioritize: bool = False):
+    with paused_queue_lock:
+        if generation_id in paused_queue_ids:
+            return
+        item = {
+            "generation_id": generation_id,
+            "user_id": user_id,
+            "request_data": request_data,
+            "retry_after": time.time() + PAUSED_RETRY_DELAY_SECONDS,
+        }
+        if prioritize:
+            paused_queue.appendleft(item)
+        else:
+            paused_queue.append(item)
+        paused_queue_ids.add(generation_id)
+
+
+def _build_resume_payload(generation: Generation, request_data: dict) -> Dict[str, Any]:
+    metadata = generation.generation_metadata or {}
+    return {
+        "api_key": request_data.get("api_key"),
+        "prompt": request_data.get("prompt") or generation.prompt,
+        "negative_prompt": request_data.get("negative_prompt") or generation.negative_prompt,
+        "resolution": request_data.get("resolution") or generation.resolution,
+        "aspect_ratio": request_data.get("aspect_ratio") or generation.aspect_ratio,
+        "guidance_scale": request_data.get("guidance_scale") or generation.guidance_scale,
+        "num_inference_steps": request_data.get("num_inference_steps") or generation.num_inference_steps,
+        "seed": request_data.get("seed") if request_data.get("seed") is not None else generation.seed,
+        "model_name": request_data.get("model_name") or generation.model_name or metadata.get("model_name"),
+        "reference_images": request_data.get("reference_images") or metadata.get("reference_image_urls") or [],
+    }
+
+
+def restore_paused_queue_from_db():
+    with db_service.get_session() as session:
+        paused_generations = (
+            session.query(Generation)
+            .filter(Generation.status == "paused")
+            .order_by(Generation.created_at.asc())
+            .all()
+        )
+        for generation in paused_generations:
+            metadata = generation.generation_metadata or {}
+            request_data = metadata.get("paused_request_data")
+            if request_data and request_data.get("api_key"):
+                enqueue_paused_generation(generation.id, generation.user_id, request_data, prioritize=False)
+
+
+def _paused_queue_worker_loop():
+    while True:
+        item = None
+        now_ts = time.time()
+        with paused_queue_lock:
+            if paused_queue:
+                candidate = paused_queue[0]
+                if candidate["retry_after"] <= now_ts:
+                    item = paused_queue.popleft()
+                    paused_queue_ids.discard(item["generation_id"])
+        if not item:
+            time.sleep(2)
+            continue
+        executor.submit(
+            process_generation_async,
+            item["generation_id"],
+            item["user_id"],
+            item["request_data"],
+        )
+        time.sleep(1)
+
+
+def start_paused_queue_worker():
+    global paused_worker_started
+    if paused_worker_started:
+        return
+    with paused_queue_lock:
+        if paused_worker_started:
+            return
+        thread = threading.Thread(target=_paused_queue_worker_loop, daemon=True)
+        thread.start()
+        paused_worker_started = True
 
 
 def _extract_minio_path_from_url(url: str, bucket: str) -> Optional[str]:
@@ -180,6 +281,8 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                 return
             
             if result['success']:
+                if generation.generation_metadata and generation.generation_metadata.get("paused_request_data"):
+                    generation.generation_metadata.pop("paused_request_data", None)
                 # Логируем что получили от ReplicateService
                 logger.info(f"[GENERATION] Результат от ReplicateService: image_url={'есть' if result.get('image_url') else 'отсутствует'}, image_data={'есть' if result.get('image_data') else 'отсутствует'}")
                 # Сохраняем в MinIO если есть данные
@@ -327,6 +430,24 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                 if not isinstance(error_message, str):
                     error_message = str(error_message)
 
+                if _is_paused_error(error_message):
+                    generation.status = "paused"
+                    generation.completed_at = None
+                    paused_payload = _build_resume_payload(generation, request_data)
+                    generation.generation_metadata["error"] = error_message
+                    generation.generation_metadata["paused_at"] = datetime.utcnow().isoformat()
+                    generation.generation_metadata["paused_request_data"] = paused_payload
+                    from sqlalchemy.orm.attributes import flag_modified
+                    flag_modified(generation, "generation_metadata")
+                    session.commit()
+                    enqueue_paused_generation(
+                        generation_id=generation_id,
+                        user_id=user_id,
+                        request_data=paused_payload,
+                        prioritize=False,
+                    )
+                    return
+
                 # Проверяем, является ли ошибка временной (rate limit / high demand)
                 # Приоритет у явного флага из ReplicateService, чтобы ретраи не зависели от текста user-friendly сообщения.
                 lower_err = error_message.lower()
@@ -365,6 +486,7 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                 generation.status = "failed"
                 generation.completed_at = datetime.utcnow()
                 total_elapsed = (generation.completed_at - started_at).total_seconds()
+                generation.generation_metadata.pop("paused_request_data", None)
 
                 # Обрезаем слишком длинные сообщения об ошибках (максимум 2000 символов)
                 if len(error_message) > 2000:
@@ -425,6 +547,7 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                 generation.completed_at = datetime.utcnow()
                 if not generation.generation_metadata:
                     generation.generation_metadata = {}
+                generation.generation_metadata.pop("paused_request_data", None)
                 generation.generation_metadata['error'] = str(e)
                 # ВАЖНО: Уведомляем SQLAlchemy об изменении JSON поля
                 from sqlalchemy.orm.attributes import flag_modified
@@ -458,7 +581,7 @@ async def generate_image(
             # Используем generation_metadata для хранения хеша ключа (безопасно, не храним сам ключ)
             active_generations = session.query(Generation).filter(
                 Generation.user_id == user.user_id,
-                Generation.status.in_(["pending", "running"])
+                Generation.status.in_(["pending", "running", "paused"])
             ).all()
             
             # Фильтруем по API ключу через metadata (если храним хеш)

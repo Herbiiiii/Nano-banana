@@ -32,7 +32,10 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = Field(7, env="REFRESH_TOKEN_EXPIRE_DAYS")
     PWD_SCHEMES: str = Field("bcrypt", env="PWD_SCHEMES")
     
-    # Replicate API (глобальный ключ, если пользователь не указал свой)
+    # BananaLab API
+    BANANALAB_API_BASE_URL: str = Field("https://api.bananalab.pw", env="BANANALAB_API_BASE_URL")
+
+    # Legacy поле (используется как API key из UI; имя оставлено для совместимости)
     REPLICATE_API_TOKEN: str = Field("", env="REPLICATE_API_TOKEN")
 
     # Banana Lab (Nano Banana HTTP API)

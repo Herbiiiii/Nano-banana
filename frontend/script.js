@@ -821,7 +821,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const data = await response.json();
                     // Поддерживаем как старый формат (массив), так и новый (объект с метаданными)
                     const generations = Array.isArray(data) ? data : (data.generations || []);
-                    const activeCount = generations.filter(g => g.status === 'pending' || g.status === 'running').length;
+                    const activeCount = generations.filter(g => g.status === 'pending' || g.status === 'running' || g.status === 'paused').length;
                     // Обновляем только если есть активные генерации
                     if (activeCount > 0) {
                         await loadGallery();
@@ -1459,7 +1459,7 @@ async function handleGenerate(e) {
                         const data = await response.json();
                         // Поддерживаем как старый формат (массив), так и новый (объект с метаданными)
                         const generations = Array.isArray(data) ? data : (data.generations || []);
-                        const activeCount = generations.filter(g => g.status === 'pending' || g.status === 'running').length;
+                        const activeCount = generations.filter(g => g.status === 'pending' || g.status === 'running' || g.status === 'paused').length;
                         if (activeCount === 0) {
                             console.log('[GENERATE] Все генерации завершены, останавливаем проверку');
                             clearInterval(checkInterval);
@@ -1477,7 +1477,7 @@ async function handleGenerate(e) {
                             const data = await retryResponse.json();
                             // Поддерживаем как старый формат (массив), так и новый (объект с метаданными)
                             const generations = Array.isArray(data) ? data : (data.generations || []);
-                            const activeCount = generations.filter(g => g.status === 'pending' || g.status === 'running').length;
+                            const activeCount = generations.filter(g => g.status === 'pending' || g.status === 'running' || g.status === 'paused').length;
                             if (activeCount === 0) {
                                 console.log('[GENERATE] Все генерации завершены, останавливаем проверку');
                                 clearInterval(checkInterval);
@@ -1799,7 +1799,7 @@ async function loadGallery() {
         }
         
         // Подсчет активных генераций
-        const activeCount = generations.filter(g => g.status === 'pending' || g.status === 'running').length;
+        const activeCount = generations.filter(g => g.status === 'pending' || g.status === 'running' || g.status === 'paused').length;
         const queueStatus = document.getElementById('queueStatus');
         const queueStatusText = document.getElementById('queueStatusText');
         if (activeCount > 0) {
@@ -1874,7 +1874,7 @@ async function loadGallery() {
                     : '';
                 const placeholderInner = gen.status === 'failed'
                     ? '<div class="text-center"><i class="fas fa-exclamation-triangle text-danger" style="font-size: 3rem;"></i><p class="mt-3 mb-0 text-light fw-bold">Ошибка генерации</p><p class="mt-2 mb-0 text-danger small">' + (gen.error_message || 'Не удалось сгенерировать изображение').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;') + '</p></div>'
-                    : '<div class="text-center"><div class="spinner-border text-warning" role="status" style="width: 3rem; height: 3rem;"><span class="visually-hidden">Загрузка...</span></div><p class="mt-3 mb-0 text-light fw-bold">' + (gen.status === 'pending' ? 'В очереди...' : gen.status === 'running' ? 'Генерируется...' : 'Ошибка') + '</p>' + attemptHintHtml + '</div>';
+                    : '<div class="text-center"><div class="spinner-border text-warning" role="status" style="width: 3rem; height: 3rem;"><span class="visually-hidden">Загрузка...</span></div><p class="mt-3 mb-0 text-light fw-bold">' + (gen.status === 'pending' ? 'В очереди...' : gen.status === 'running' ? 'Генерируется...' : gen.status === 'paused' ? 'Пауза модели, ожидаем...' : 'Ошибка') + '</p>' + attemptHintHtml + '</div>';
                 imageBlock = '<div class="position-absolute top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center" style="z-index: 1; background: linear-gradient(135deg, #1a1a2e 0%, #252547 100%); border-radius: 0 0 12px 12px;">' + placeholderInner + '</div>';
             }
             const infoBtnHtml = (gen.status === 'completed' || gen.status === 'failed') ? '<button class="btn btn-sm btn-link text-white p-1 info-btn" data-gen-id="' + gen.id + '" title="Параметры генерации" style="opacity: 0.9; pointer-events: auto !important; cursor: pointer; z-index: 10; position: relative;"><i class="fas fa-info-circle" style="font-size: 0.75rem;"></i></button>' : '';
@@ -1883,9 +1883,9 @@ async function loadGallery() {
             const fallbackBtnHtml = (gen.status === 'failed' && gen.fallback_model)
                 ? '<button class="btn btn-icon-only btn-fallback" onclick="event.stopPropagation(); event.preventDefault(); retryGenerationWithFallback(' + gen.id + ', \'' + String(gen.fallback_model).replace(/'/g, "\\'") + '\')" title="Перезапустить на ' + String(gen.fallback_model).replace(/"/g, '&quot;') + '" style="width: 28px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center; border-radius: 4px; border: none; font-size: 0.7rem; pointer-events: auto; cursor: pointer; z-index: 10; position: relative; background: #f59e0b; color: #111;"><i class="fas fa-rotate-right"></i></button>'
                 : '';
-            const statusBg = gen.status === 'completed' ? 'linear-gradient(135deg, rgba(74, 85, 104, 0.7) 0%, rgba(72, 187, 120, 0.5) 100%)' : gen.status === 'failed' ? 'linear-gradient(135deg, rgba(74, 85, 104, 0.7) 0%, rgba(229, 62, 62, 0.5) 100%)' : 'linear-gradient(135deg, rgba(74, 85, 104, 0.7) 0%, rgba(102, 126, 234, 0.5) 100%)';
-            const statusBorder = gen.status === 'completed' ? 'rgba(72, 187, 120, 0.6)' : gen.status === 'failed' ? 'rgba(229, 62, 62, 0.6)' : 'rgba(102, 126, 234, 0.6)';
-            const statusText = gen.status === 'completed' ? 'Завершено' : gen.status === 'running' ? 'Генерируется' : gen.status === 'pending' ? 'В очереди' : 'Ошибка';
+            const statusBg = gen.status === 'completed' ? 'linear-gradient(135deg, rgba(74, 85, 104, 0.7) 0%, rgba(72, 187, 120, 0.5) 100%)' : gen.status === 'failed' ? 'linear-gradient(135deg, rgba(74, 85, 104, 0.7) 0%, rgba(229, 62, 62, 0.5) 100%)' : gen.status === 'paused' ? 'linear-gradient(135deg, rgba(74, 85, 104, 0.7) 0%, rgba(246, 173, 85, 0.6) 100%)' : 'linear-gradient(135deg, rgba(74, 85, 104, 0.7) 0%, rgba(102, 126, 234, 0.5) 100%)';
+            const statusBorder = gen.status === 'completed' ? 'rgba(72, 187, 120, 0.6)' : gen.status === 'failed' ? 'rgba(229, 62, 62, 0.6)' : gen.status === 'paused' ? 'rgba(246, 173, 85, 0.7)' : 'rgba(102, 126, 234, 0.6)';
+            const statusText = gen.status === 'completed' ? 'Завершено' : gen.status === 'running' ? 'Генерируется' : gen.status === 'pending' ? 'В очереди' : gen.status === 'paused' ? 'Пауза модели' : 'Ошибка';
             const promptEscaped = (gen.prompt || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
             const dataImageUrl = hasImage ? gen.result_url.replace(/'/g, "\\'") : '';
             const dataPrompt = hasImage ? (gen.prompt || '').replace(/'/g, "\\'").replace(/"/g, '&quot;') : '';
