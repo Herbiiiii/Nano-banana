@@ -13,11 +13,13 @@ import requests
 from app.config import settings
 from app.services.generation_prompt import enhance_prompt_for_image_generation
 from app.services.bananalab_response import (
+    BANANALAB_PROVIDER_UNAVAILABLE_MESSAGE,
     absolute_job_status_url,
     detail_from_response_body,
     find_image_in_json,
     humanize_api_error,
     is_bananalab_paused_message,
+    is_bananalab_unavailable_message,
 )
 
 _GATEWAY_RETRY_STATUS = frozenset((502, 503, 521, 522, 523, 524))
@@ -62,6 +64,24 @@ class BananalabService:
     MAX_RETRIES = 3
     RETRY_DELAY_SECONDS = 5
     JOB_POLL_INTERVAL_SECONDS = 3.0
+    HEALTH_PROBE_TIMEOUT_SECONDS = 5.0
+
+    @staticmethod
+    def probe_reachable(
+        timeout: Optional[float] = None,
+        base_url: Optional[str] = None,
+    ) -> tuple[bool, Optional[str]]:
+        """Любой HTTP-ответ считаем «сервер жив»; сбой TCP/DNS — недоступен."""
+        base = (base_url or settings.BANANALAB_BASE_URL).rstrip("/")
+        probe_timeout = timeout if timeout is not None else BananalabService.HEALTH_PROBE_TIMEOUT_SECONDS
+        try:
+            requests.get(f"{base}/", timeout=probe_timeout)
+            return True, None
+        except requests.RequestException as exc:
+            raw = str(exc)
+            if is_bananalab_unavailable_message(raw):
+                return False, BANANALAB_PROVIDER_UNAVAILABLE_MESSAGE
+            return False, humanize_api_error(raw)
 
     def __init__(self, api_key: str, base_url: Optional[str] = None):
         if not api_key or not api_key.strip():
@@ -491,12 +511,22 @@ class BananalabService:
                 }
             except Exception as e:
                 logger.exception("[BANANALAB] Сбой запроса: %s", e)
-                lower = str(e).lower()
+                raw = str(e) or "Ошибка сети при обращении к Banana Lab"
+                if is_bananalab_unavailable_message(raw):
+                    return {
+                        "success": False,
+                        "image_url": None,
+                        "image_data": None,
+                        "error": BANANALAB_PROVIDER_UNAVAILABLE_MESSAGE,
+                        "retryable": False,
+                        "unavailable": True,
+                    }
+                lower = raw.lower()
                 return {
                     "success": False,
                     "image_url": None,
                     "image_data": None,
-                    "error": str(e) or "Ошибка сети при обращении к Banana Lab",
+                    "error": humanize_api_error(raw),
                     "retryable": any(x in lower for x in ("timeout", "connection", "429")),
                 }
 

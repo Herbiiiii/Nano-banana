@@ -991,23 +991,12 @@ async function loadProviderStatus() {
         serverStoredProvider = data.provider || 'unknown';
         banner.style.display = 'block';
 
-        if (data.state === 'paused') {
+        if (data.state === 'unavailable') {
+            banner.className = 'alert alert-danger py-2 px-3 mt-2 mb-0 small';
+            text.textContent = data.message || 'BananaHub API недоступен: сервер провайдера не отвечает.';
+        } else if (data.state === 'paused') {
             banner.className = 'alert alert-warning py-2 px-3 mt-2 mb-0 small';
-            let durationText = '';
-            if (typeof data.paused_duration_seconds === 'number' && data.paused_duration_seconds >= 0) {
-                const total = data.paused_duration_seconds;
-                const hours = Math.floor(total / 3600);
-                const minutes = Math.floor((total % 3600) / 60);
-                const seconds = total % 60;
-                if (hours > 0) {
-                    durationText = ` На паузе уже ${hours} ч ${minutes} мин.`;
-                } else if (minutes > 0) {
-                    durationText = ` На паузе уже ${minutes} мин ${seconds} сек.`;
-                } else {
-                    durationText = ` На паузе уже ${seconds} сек.`;
-                }
-            }
-            text.textContent = (data.message || 'BananaLab: проект на паузе у провайдера.') + durationText;
+            text.textContent = data.message || 'BananaLab: проект на паузе у провайдера.';
         } else if (data.state === 'ok') {
             banner.className = 'alert alert-success py-2 px-3 mt-2 mb-0 small';
             text.textContent = data.message || 'Провайдер доступен, можно генерировать.';

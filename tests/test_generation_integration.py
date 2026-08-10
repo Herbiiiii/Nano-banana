@@ -178,6 +178,30 @@ class TestHumanizeApiError(unittest.TestCase):
         self.assertTrue(is_bananalab_paused_message("Проект Banana Lab на паузе."))
         self.assertFalse(is_bananalab_paused_message("rate limit exceeded"))
 
+    def test_is_bananalab_unavailable_message(self):
+        from app.services.bananalab_response import (
+            BANANALAB_PROVIDER_UNAVAILABLE_MESSAGE,
+            is_bananalab_unavailable_message,
+        )
+
+        self.assertTrue(
+            is_bananalab_unavailable_message(
+                "HTTPSConnectionPool(host='bananahub.io', port=443): "
+                "Failed to establish a new connection: [Errno 111] Connection refused"
+            )
+        )
+        self.assertTrue(
+            is_bananalab_unavailable_message(
+                "Failed to resolve 'bananahub.io' ([Errno -2] Name or service not known)"
+            )
+        )
+        self.assertFalse(is_bananalab_unavailable_message("Project is paused."))
+
+        msg = humanize_api_error(
+            "Failed to connect to bananahub.io port 443: Connection refused"
+        )
+        self.assertEqual(msg, BANANALAB_PROVIDER_UNAVAILABLE_MESSAGE)
+
     def test_http_status_without_body(self):
         msg = humanize_api_error("", 503)
         self.assertIn("503", msg)

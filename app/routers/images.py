@@ -25,7 +25,11 @@ from app.config import settings
 from app.models.token import TokenPayload
 from app.security_helpers import generate_storage_object_name, is_allowed_reference_url
 from app.services.result_storage import persist_generation_result
-from app.services.bananalab_response import humanize_api_error, is_bananalab_paused_message
+from app.services.bananalab_response import (
+    humanize_api_error,
+    is_bananalab_paused_message,
+    is_bananalab_unavailable_message,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +53,15 @@ bananalab_runtime_state = {
     "last_paused_error": None,
     "last_success_at": None,
     "project_paused_since": None,
+    "last_unavailable_at": None,
+    "last_unavailable_error": None,
+    "provider_unavailable_since": None,
+    "health_probe_at": None,
+    "health_probe_ok": None,
+    "health_probe_error": None,
 }
+
+BANANALAB_HEALTH_PROBE_TTL_SECONDS = 45
 
 
 def get_fallback_model(model_name: Optional[str]) -> Optional[str]:
@@ -65,6 +77,12 @@ def _is_paused_error(error_message: str) -> bool:
     return is_bananalab_paused_message(error_message)
 
 
+def _is_unavailable_error(error_message: str) -> bool:
+    if not error_message:
+        return False
+    return is_bananalab_unavailable_message(error_message)
+
+
 def _mark_bananalab_paused(error_message: str) -> None:
     now = datetime.utcnow().isoformat()
     bananalab_runtime_state["last_paused_at"] = now
@@ -76,6 +94,70 @@ def _mark_bananalab_paused(error_message: str) -> None:
 def _clear_bananalab_paused() -> None:
     bananalab_runtime_state["project_paused_since"] = None
     bananalab_runtime_state["last_paused_error"] = None
+
+
+def _mark_bananalab_unavailable(error_message: str) -> None:
+    now = datetime.utcnow().isoformat()
+    bananalab_runtime_state["last_unavailable_at"] = now
+    bananalab_runtime_state["last_unavailable_error"] = error_message
+    if not bananalab_runtime_state.get("provider_unavailable_since"):
+        bananalab_runtime_state["provider_unavailable_since"] = now
+
+
+def _clear_bananalab_unavailable() -> None:
+    bananalab_runtime_state["provider_unavailable_since"] = None
+    bananalab_runtime_state["last_unavailable_error"] = None
+
+
+def _bananalab_is_unavailable() -> bool:
+    last_unavailable = bananalab_runtime_state.get("last_unavailable_at")
+    last_success = bananalab_runtime_state.get("last_success_at")
+    last_error = bananalab_runtime_state.get("last_unavailable_error") or ""
+    if _is_unavailable_error(last_error):
+        if last_unavailable and (not last_success or str(last_success) < str(last_unavailable)):
+            return True
+    return False
+
+
+def _bananalab_health_status() -> tuple[bool, Optional[str]]:
+    now_ts = time.time()
+    probe_at = bananalab_runtime_state.get("health_probe_at")
+    if probe_at is not None and (now_ts - float(probe_at)) < BANANALAB_HEALTH_PROBE_TTL_SECONDS:
+        return bool(bananalab_runtime_state.get("health_probe_ok")), bananalab_runtime_state.get("health_probe_error")
+
+    reachable, probe_error = BananalabService.probe_reachable()
+    bananalab_runtime_state["health_probe_at"] = now_ts
+    bananalab_runtime_state["health_probe_ok"] = reachable
+    bananalab_runtime_state["health_probe_error"] = probe_error
+    if not reachable:
+        _mark_bananalab_unavailable(probe_error or "BananaHub API недоступен.")
+    return reachable, probe_error
+
+
+def _unavailable_duration_seconds() -> Optional[int]:
+    since = (
+        bananalab_runtime_state.get("provider_unavailable_since")
+        or bananalab_runtime_state.get("last_unavailable_at")
+    )
+    if not since:
+        return None
+    try:
+        started = datetime.fromisoformat(str(since))
+        return max(0, int((datetime.utcnow() - started).total_seconds()))
+    except ValueError:
+        return None
+
+
+def _format_duration_hint(total_seconds: Optional[int], prefix: str) -> str:
+    if total_seconds is None:
+        return ""
+    hours, rem = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(rem, 60)
+    if hours:
+        return f" {prefix} {hours} ч {minutes} мин."
+    if minutes:
+        return f" {prefix} {minutes} мин {seconds} сек."
+    return f" {prefix} {seconds} сек."
 
 
 def _bananalab_is_paused() -> bool:
@@ -399,6 +481,7 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                 if provider == "bananalab":
                     bananalab_runtime_state["last_success_at"] = datetime.utcnow().isoformat()
                     _clear_bananalab_paused()
+                    _clear_bananalab_unavailable()
                 if generation.generation_metadata and generation.generation_metadata.get("paused_request_data"):
                     generation.generation_metadata.pop("paused_request_data", None)
                 logger.info(
@@ -449,6 +532,18 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                     error_message = str(error_message)
 
                 error_message = humanize_api_error(error_message)
+                if result.get("unavailable") or _is_unavailable_error(error_message):
+                    generation.status = "failed"
+                    generation.completed_at = datetime.utcnow()
+                    generation.generation_metadata["error"] = error_message
+                    generation.generation_metadata.pop("paused_request_data", None)
+                    if provider == "bananalab":
+                        _mark_bananalab_unavailable(error_message)
+                    from sqlalchemy.orm.attributes import flag_modified
+                    flag_modified(generation, "generation_metadata")
+                    session.commit()
+                    return
+
                 if result.get("paused") or _is_paused_error(error_message):
                     generation.status = "paused"
                     generation.completed_at = None
@@ -983,43 +1078,56 @@ async def get_provider_status(
             "has_bananalab_key": has_bananalab_key,
         }
 
-    # Banana Lab: paused если API вернул project paused или есть paused-очередь
-    is_paused = _bananalab_is_paused()
+    # Banana Lab: сначала проверяем доступность хоста, затем паузу проекта
+    reachable, probe_error = _bananalab_health_status()
+    is_unavailable = not reachable or _bananalab_is_unavailable()
+    is_paused = (not is_unavailable) and _bananalab_is_paused()
     paused_since = bananalab_runtime_state.get("project_paused_since") or (
         bananalab_runtime_state.get("last_paused_at") if is_paused else None
     )
+    unavailable_since = bananalab_runtime_state.get("provider_unavailable_since") or (
+        bananalab_runtime_state.get("last_unavailable_at") if is_unavailable else None
+    )
     paused_duration_seconds = _paused_duration_seconds() if is_paused else None
+    unavailable_duration_seconds = _unavailable_duration_seconds() if is_unavailable else None
     queue_size = _queue_size()
+    last_unavailable_at = bananalab_runtime_state.get("last_unavailable_at")
+    last_unavailable_error = bananalab_runtime_state.get("last_unavailable_error")
 
-    if is_paused:
-        duration_hint = ""
-        if paused_duration_seconds is not None:
-            hours, rem = divmod(paused_duration_seconds, 3600)
-            minutes, seconds = divmod(rem, 60)
-            if hours:
-                duration_hint = f" На паузе уже {hours} ч {minutes} мин."
-            elif minutes:
-                duration_hint = f" На паузе уже {minutes} мин {seconds} сек."
-            else:
-                duration_hint = f" На паузе уже {seconds} сек."
+    if is_unavailable:
+        duration_hint = _format_duration_hint(unavailable_duration_seconds, "Недоступен уже")
+        base_message = probe_error or last_unavailable_error or (
+            "BananaHub API недоступен: сервер провайдера не отвечает. "
+            "Это не проблема вашего аккаунта — напишите в @bananahub в Telegram."
+        )
+        message = base_message + duration_hint
+        state = "unavailable"
+    elif is_paused:
+        duration_hint = _format_duration_hint(paused_duration_seconds, "На паузе уже")
         message = (
             f"BananaLab: проект на паузе у провайдера.{duration_hint} "
             f"Задач в очереди: {queue_size}. Автоповтор включён."
         )
+        state = "paused"
     else:
         message = "BananaLab: генерация доступна."
+        state = "ok"
 
     return {
         "provider": "bananalab",
-        "state": "paused" if is_paused else "ok",
-        "can_generate": not is_paused,
+        "state": state,
+        "can_generate": state == "ok",
         "message": message,
         "paused_queue_size": queue_size,
         "last_paused_at": last_paused_at,
         "last_success_at": last_success_at,
         "last_paused_error": last_paused_error,
+        "last_unavailable_at": last_unavailable_at,
+        "last_unavailable_error": last_unavailable_error,
         "paused_since": paused_since,
         "paused_duration_seconds": paused_duration_seconds,
+        "unavailable_since": unavailable_since,
+        "unavailable_duration_seconds": unavailable_duration_seconds,
         "has_replicate_key": has_replicate_key,
         "has_bananalab_key": has_bananalab_key,
     }

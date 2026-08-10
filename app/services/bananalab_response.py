@@ -64,6 +64,39 @@ BANANALAB_PROJECT_PAUSED_MESSAGE = (
     "дождитесь возобновления или обратитесь в поддержку BananaHub."
 )
 
+BANANALAB_PROVIDER_UNAVAILABLE_MESSAGE = (
+    "BananaHub API недоступен: сервер провайдера не отвечает. "
+    "Это проблема на стороне BananaHub, не вашего аккаунта. "
+    "Напишите в поддержку @bananahub в Telegram."
+)
+
+_UNAVAILABLE_MARKERS = (
+    "connection refused",
+    "failed to establish a new connection",
+    "failed to connect",
+    "could not connect",
+    "couldn't connect",
+    "name or service not known",
+    "failed to resolve",
+    "name resolution",
+    "nodename nor servname",
+    "getaddrinfo failed",
+    "max retries exceeded",
+    "connectionerror",
+    "newconnectionerror",
+    "connection aborted",
+    "connection reset",
+    "bananahub api недоступен",
+    "errno 111",
+    "errno -2",
+    "errno -3",
+)
+
+
+def is_bananalab_unavailable_message(text: Any) -> bool:
+    lower = str(text or "").lower()
+    return any(marker in lower for marker in _UNAVAILABLE_MARKERS)
+
 
 def is_bananalab_paused_message(text: Any) -> bool:
     lower = str(text or "").lower()
@@ -124,6 +157,9 @@ def humanize_api_error(message: Any, http_status: Optional[int] = None) -> str:
 
     if is_bananalab_paused_message(text):
         return BANANALAB_PROJECT_PAUSED_MESSAGE
+
+    if is_bananalab_unavailable_message(text):
+        return BANANALAB_PROVIDER_UNAVAILABLE_MESSAGE
 
     status_key = str(http_status) if http_status else None
     if status_key in _CLOUDFLARE_GATEWAY_MESSAGES and http_status and http_status >= 500:
