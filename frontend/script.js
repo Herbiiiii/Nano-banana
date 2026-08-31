@@ -12,14 +12,14 @@ let serverStoredProvider = 'unknown';
 // Модели Imagen: только описание, соотношение сторон, seed (без разрешения, шагов, guidance, негативного промпта, референсов)
 const IMAGEN_MODEL_IDS = ['imagen-4', 'imagen-4-fast', 'imagen-4-ultra'];
 
-// С ключом Banana Lab (nb_…) доступны только Nano Banana — не Replicate-only модели
+// С ключом BananaHub (nb_…) доступны только Nano Banana — не Replicate-only модели
 const BANANALAB_UNSUPPORTED_MODEL_IDS = ['imagen-4', 'imagen-4-fast', 'imagen-4-ultra', 'gemini-2.5-flash-image'];
 
 function isBananalabKey() {
     return serverStoredProvider === 'bananalab';
 }
 
-/** Для Banana Lab backend не принимает model в body: выбор модели в UI информационный. */
+/** Для BananaHub backend не принимает model в body: выбор модели в UI информационный. */
 function refreshModelSelectForCurrentKey() {
     const select = document.getElementById('modelName');
     if (!select) return;
@@ -31,7 +31,7 @@ function refreshModelSelectForCurrentKey() {
     if (bl && BANANALAB_UNSUPPORTED_MODEL_IDS.includes(select.value)) {
         select.value = 'nano-banana-2';
         setSelectedModel(select.value);
-        showToast('Для ключа Banana Lab оставлены только Nano Banana модели. Выбрана Nano Banana 2.', 'info');
+        showToast('Для ключа BananaHub оставлены только Nano Banana модели. Выбрана Nano Banana 2.', 'info');
     }
     updateParamsForModel();
 }
@@ -70,7 +70,7 @@ function updateParamsForModel() {
     }
     if (hintEl) {
         if (isBananalabKey()) {
-            hintEl.textContent = 'Banana Lab: используются endpoint`ы text/base64, выбор модели в UI может не влиять на backend.';
+            hintEl.textContent = 'BananaHub: используются endpoint`ы text/base64, выбор модели в UI может не влиять на backend.';
         } else {
             hintEl.textContent = isImagen
                 ? 'Доступны: описание, соотношение сторон, seed. Референсы и остальные параметры не поддерживаются.'
@@ -977,18 +977,21 @@ async function loadAdminGenerations() {
 async function loadProviderStatus() {
     const banner = document.getElementById('providerStateBanner');
     const text = document.getElementById('providerStateText');
-    if (!banner || !text || !authToken) return;
+    if (!banner || !text) return;
 
     const modelName = document.getElementById('modelName')?.value || 'nano-banana-pro';
+    const url = authToken
+        ? `${API_URL}/images/provider-status?model_name=${encodeURIComponent(modelName)}`
+        : `${API_URL}/images/bananahub-health`;
+    const headers = authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
+
     try {
-        const response = await fetch(`${API_URL}/images/provider-status?model_name=${encodeURIComponent(modelName)}`, {
-            headers: {
-                'Authorization': `Bearer ${authToken}`
-            }
-        });
+        const response = await fetch(url, { headers });
         if (!response.ok) return;
         const data = await response.json();
-        serverStoredProvider = data.provider || 'unknown';
+        if (authToken) {
+            serverStoredProvider = data.provider || 'unknown';
+        }
         banner.style.display = 'block';
 
         if (data.state === 'unavailable') {
@@ -996,10 +999,13 @@ async function loadProviderStatus() {
             text.textContent = data.message || 'BananaHub API недоступен: сервер провайдера не отвечает.';
         } else if (data.state === 'paused') {
             banner.className = 'alert alert-warning py-2 px-3 mt-2 mb-0 small';
-            text.textContent = data.message || 'BananaLab: проект на паузе у провайдера.';
+            text.textContent = data.message || 'BananaHub: проект на паузе у провайдера.';
         } else if (data.state === 'ok') {
             banner.className = 'alert alert-success py-2 px-3 mt-2 mb-0 small';
             text.textContent = data.message || 'Провайдер доступен, можно генерировать.';
+        } else if (data.state === 'unknown' && authToken) {
+            banner.className = 'alert alert-secondary py-2 px-3 mt-2 mb-0 small';
+            text.textContent = data.message || 'Введите API ключ в настройках, чтобы определить состояние провайдера.';
         } else {
             banner.className = 'alert alert-secondary py-2 px-3 mt-2 mb-0 small';
             text.textContent = data.message || 'Состояние провайдера неизвестно.';
@@ -1007,6 +1013,39 @@ async function loadProviderStatus() {
     } catch (error) {
         console.warn('[PROVIDER_STATUS] Ошибка получения статуса провайдера:', error);
     }
+}
+
+function openLoginModal() {
+    const loginBtn = document.getElementById('loginBtn');
+    if (loginBtn) {
+        loginBtn.click();
+        return;
+    }
+    const modalEl = document.getElementById('loginModal');
+    if (modalEl && typeof bootstrap !== 'undefined') {
+        bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    }
+}
+
+function renderLoginRequiredGallery(options) {
+    const grid = document.getElementById('imageGrid');
+    if (!grid) return;
+    const opts = typeof options === 'string'
+        ? { suffix: options }
+        : (options || {});
+    const variant = opts.variant || 'info';
+    const suffix = opts.suffix || 'чтобы просматривать ваши генерации.';
+    const linkText = opts.linkText || 'Войдите в систему';
+    grid.innerHTML = `
+        <div class="col-12">
+            <div class="alert alert-${variant} mb-0">
+                <a href="#" class="alert-link fw-semibold" id="galleryLoginLink">${linkText}</a> ${suffix}
+            </div>
+        </div>`;
+    document.getElementById('galleryLoginLink')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        openLoginModal();
+    });
 }
 
 // Инициализация
@@ -1084,9 +1123,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Отдельный цикл обновления состояния провайдера
     setInterval(async () => {
-        if (authToken) {
-            await loadProviderStatus();
-        }
+        await loadProviderStatus();
     }, 8000);
 });
 
@@ -1215,11 +1252,7 @@ function checkAuth() {
         loadUserInfo();
     } else {
         showLoginButton();
-        // Показываем сообщение о необходимости входа
-        const grid = document.getElementById('imageGrid');
-        if (grid) {
-            grid.innerHTML = '<div class="col-12"><div class="alert alert-info">Войдите в систему для просмотра ваших генераций</div></div>';
-        }
+        renderLoginRequiredGallery();
     }
 }
 
@@ -1247,10 +1280,11 @@ async function loadUserInfo() {
             showLoginButton();
             toggleAdminMenuVisibility();
             showAdminPanel(false);
-            const grid = document.getElementById('imageGrid');
-            if (grid) {
-                grid.innerHTML = '<div class="col-12"><div class="alert alert-warning">Ошибка аутентификации. Войдите снова.</div></div>';
-            }
+            renderLoginRequiredGallery({
+                variant: 'warning',
+                linkText: 'Войдите снова',
+                suffix: '— ошибка аутентификации.'
+            });
         }
     } catch (error) {
         console.error('Ошибка загрузки пользователя:', error);
@@ -1272,7 +1306,7 @@ async function checkApiKeyStatus() {
         if (data.has_key) {
             const bananaState = data.has_bananalab_key ? 'есть' : 'нет';
             const replicateState = data.has_replicate_key ? 'есть' : 'нет';
-            statusDiv.innerHTML = `<span class="text-success"><i class="fas fa-check-circle me-1"></i>Ключи сохранены: BananaLab — ${bananaState}, Replicate — ${replicateState}</span>`;
+            statusDiv.innerHTML = `<span class="text-success"><i class="fas fa-check-circle me-1"></i>Ключи сохранены: BananaHub — ${bananaState}, Replicate — ${replicateState}</span>`;
         } else {
             statusDiv.innerHTML = '<span class="text-muted"><i class="fas fa-info-circle me-1"></i>Ключи на сервере не сохранены</span>';
         }
@@ -1954,7 +1988,7 @@ async function handleApiKeySave(e) {
                 body: JSON.stringify({ api_key: bananaApiKey, provider: 'bananalab' })
             });
             if (!bananaResp.ok) {
-                throw new Error('Не удалось сохранить ключ Banana Lab');
+                throw new Error('Не удалось сохранить ключ BananaHub');
             }
         }
         if (replicateApiKey) {
@@ -2053,7 +2087,7 @@ async function loadGallery() {
     
     if (!authToken) {
         console.log('[GALLERY] Токен не найден, показываем сообщение о входе');
-        grid.innerHTML = '<div class="col-12"><div class="alert alert-info">Войдите в систему для просмотра ваших генераций</div></div>';
+        renderLoginRequiredGallery();
         return;
     }
     
@@ -2636,7 +2670,7 @@ async function retryGenerationWithFallback(id, fallbackModel) {
 
     const apiKey = getApiKey();
     if (!apiKey || apiKey.trim() === '') {
-        showToast('Введите API ключ (Replicate или Banana Lab) в настройках', 'error');
+        showToast('Введите API ключ (Replicate или BananaHub) в настройках', 'error');
         return;
     }
 

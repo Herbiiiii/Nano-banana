@@ -1025,6 +1025,46 @@ async def get_available_models(
     }
 
 
+@router.get("/bananahub-health")
+async def get_bananahub_health():
+    """Публичный статус BananaHub API — для баннера на главной без авторизации."""
+    reachable, probe_error = _bananalab_health_status()
+    is_unavailable = not reachable or _bananalab_is_unavailable()
+    is_paused = (not is_unavailable) and _bananalab_is_paused()
+
+    if is_unavailable:
+        duration_hint = _format_duration_hint(_unavailable_duration_seconds(), "Недоступен уже")
+        base_message = probe_error or bananalab_runtime_state.get("last_unavailable_error") or (
+            "BananaHub API недоступен: сервер провайдера не отвечает. "
+            "Это не проблема вашего аккаунта — напишите в @bananahub в Telegram."
+        )
+        return {
+            "provider": "bananalab",
+            "state": "unavailable",
+            "can_generate": False,
+            "message": base_message + duration_hint,
+        }
+
+    if is_paused:
+        duration_hint = _format_duration_hint(_paused_duration_seconds(), "На паузе уже")
+        return {
+            "provider": "bananalab",
+            "state": "paused",
+            "can_generate": False,
+            "message": (
+                f"BananaHub: проект на паузе у провайдера.{duration_hint} "
+                f"Задач в очереди: {_queue_size()}. Автоповтор включён."
+            ),
+        }
+
+    return {
+        "provider": "bananalab",
+        "state": "ok",
+        "can_generate": True,
+        "message": "BananaHub: генерация доступна.",
+    }
+
+
 @router.get("/provider-status")
 async def get_provider_status(
     request: Request,
@@ -1105,12 +1145,12 @@ async def get_provider_status(
     elif is_paused:
         duration_hint = _format_duration_hint(paused_duration_seconds, "На паузе уже")
         message = (
-            f"BananaLab: проект на паузе у провайдера.{duration_hint} "
+            f"BananaHub: проект на паузе у провайдера.{duration_hint} "
             f"Задач в очереди: {queue_size}. Автоповтор включён."
         )
         state = "paused"
     else:
-        message = "BananaLab: генерация доступна."
+        message = "BananaHub: генерация доступна."
         state = "ok"
 
     return {
