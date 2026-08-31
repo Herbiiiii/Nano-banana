@@ -2,7 +2,7 @@
 Конфигурация приложения
 """
 from pydantic_settings import BaseSettings
-from pydantic import Field
+from pydantic import Field, field_validator
 import os
 
 class Settings(BaseSettings):
@@ -40,6 +40,14 @@ class Settings(BaseSettings):
 
     # Banana Lab (Nano Banana HTTP API)
     BANANALAB_BASE_URL: str = Field("https://bananahub.app/api", env="BANANALAB_BASE_URL")
+
+    @field_validator("BANANALAB_BASE_URL", "BANANALAB_API_BASE_URL", mode="before")
+    @classmethod
+    def _normalize_bananahub_domain(cls, value):
+        """Старый bananahub.io не резолвится — принудительно .app."""
+        if isinstance(value, str):
+            return value.replace("bananahub.io", "bananahub.app")
+        return value
     
     # Performance
     # По умолчанию запускаем только одну генерацию одновременно, чтобы уменьшить вероятность E003/rate-limit
