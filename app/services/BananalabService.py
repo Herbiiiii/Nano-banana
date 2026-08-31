@@ -20,6 +20,7 @@ from app.services.bananalab_response import (
     humanize_api_error,
     is_bananalab_paused_message,
     is_bananalab_unavailable_message,
+    is_bananalab_upstream_no_image_message,
 )
 
 _GATEWAY_RETRY_STATUS = frozenset((502, 503, 521, 522, 523, 524))
@@ -155,6 +156,7 @@ class BananalabService:
                 return {
                     "__bananalab_job_failed__": True,
                     "error": humanize_api_error(err),
+                    "raw_error": err,
                     "_raw": current,
                 }
 
@@ -453,15 +455,17 @@ class BananalabService:
                 if isinstance(data, dict) and (data.get("job_id") or data.get("status_url")):
                     data = self._poll_job_until_done(data)
                     if isinstance(data, dict) and data.get("__bananalab_job_failed__"):
+                        raw_err = data.get("raw_error") or data.get("error")
                         err_msg = str(data.get("error") or "Ошибка задачи Banana Lab")
-                        low = err_msg.lower()
+                        low = str(raw_err or err_msg).lower()
                         explicit_retryable = bool(data.get("retryable"))
+                        upstream_empty = is_bananalab_upstream_no_image_message(raw_err or err_msg)
                         return {
                             "success": False,
                             "image_url": None,
                             "image_data": None,
                             "error": err_msg,
-                            "retryable": explicit_retryable or any(
+                            "retryable": explicit_retryable or upstream_empty or any(
                                 x in low for x in ("timeout", "таймаут", "429", "503", "unavailable")
                             ),
                         }

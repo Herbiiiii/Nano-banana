@@ -29,6 +29,7 @@ from app.services.bananalab_response import (
     humanize_api_error,
     is_bananalab_paused_message,
     is_bananalab_unavailable_message,
+    is_bananalab_upstream_no_image_message,
 )
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,9 @@ executor = ThreadPoolExecutor(max_workers=settings.MAX_WORKERS)
 
 # Максимальное количество повторных попыток генерации при временных ошибках (E003 / 429)
 MAX_GENERATION_RETRIES = 5
+# Flaky upstream BananaHub: «Upstream returned no image» часто проходит со 2–3 попытки
+BANANALAB_UPSTREAM_NO_IMAGE_MAX_RETRIES = 3
+BANANALAB_UPSTREAM_NO_IMAGE_RETRY_DELAY_SECONDS = 3
 PAUSED_RETRY_DELAY_SECONDS = 30
 
 router = APIRouter(prefix="/images", tags=["images"])
@@ -568,7 +572,8 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                 # Приоритет у явного флага из ReplicateService, чтобы ретраи не зависели от текста user-friendly сообщения.
                 lower_err = error_message.lower()
                 service_retryable = bool(result.get("retryable"))
-                is_retryable = service_retryable or (
+                upstream_no_image = is_bananalab_upstream_no_image_message(error_message)
+                is_retryable = service_retryable or upstream_no_image or (
                     "e003" in lower_err
                     or "high demand" in lower_err
                     or "429" in lower_err
@@ -580,26 +585,44 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                 )
 
                 current_retries = generation.generation_metadata.get("retry_count", 0)
+                max_retries_for_error = (
+                    BANANALAB_UPSTREAM_NO_IMAGE_MAX_RETRIES
+                    if upstream_no_image
+                    else MAX_GENERATION_RETRIES
+                )
 
-                if is_retryable and current_retries < MAX_GENERATION_RETRIES:
+                if is_retryable and current_retries < max_retries_for_error:
                     # Увеличиваем счетчик попыток и ставим задачу обратно в очередь
                     generation.generation_metadata["retry_count"] = current_retries + 1
                     generation.status = "pending"
                     generation.completed_at = None
+                    if upstream_no_image:
+                        generation.generation_metadata["last_upstream_no_image_at"] = (
+                            datetime.utcnow().isoformat()
+                        )
 
                     from sqlalchemy.orm.attributes import flag_modified
                     flag_modified(generation, "generation_metadata")
 
                     session.commit()
 
+                    retry_delay = (
+                        BANANALAB_UPSTREAM_NO_IMAGE_RETRY_DELAY_SECONDS
+                        if upstream_no_image
+                        else 0
+                    )
                     logger.warning(
                         f"[GENERATION] Генерация {generation_id} получила временную ошибку "
-                        f"и будет автоматически повторена ({current_retries + 1}/{MAX_GENERATION_RETRIES}): "
+                        f"и будет автоматически повторена ({current_retries + 1}/{max_retries_for_error}): "
                         f"{error_message[:200]}"
                     )
 
-                    # Повторно отправляем в executor с теми же входными данными
-                    executor.submit(process_generation_async, generation_id, user_id, request_data)
+                    def _retry_generation():
+                        if retry_delay > 0:
+                            time.sleep(retry_delay)
+                        process_generation_async(generation_id, user_id, request_data)
+
+                    executor.submit(_retry_generation)
                     return
 
                 # Если ошибка не временная или исчерпаны попытки — помечаем как failed

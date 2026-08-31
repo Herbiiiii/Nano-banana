@@ -217,6 +217,21 @@ class TestHumanizeApiError(unittest.TestCase):
         )
         self.assertEqual(msg, BANANALAB_PROVIDER_UNAVAILABLE_MESSAGE)
 
+    def test_is_bananalab_upstream_no_image_message(self):
+        from app.services.bananalab_response import (
+            is_bananalab_upstream_no_image_message,
+            humanize_api_error,
+        )
+
+        self.assertTrue(is_bananalab_upstream_no_image_message("Upstream returned no image"))
+        self.assertTrue(
+            is_bananalab_upstream_no_image_message("Исходный поток не вернул изображение.")
+        )
+        self.assertFalse(is_bananalab_upstream_no_image_message("Project is paused."))
+
+        msg = humanize_api_error("Upstream returned no image")
+        self.assertIn("не вернул изображение", msg.lower())
+
     def test_http_status_without_body(self):
         msg = humanize_api_error("", 503)
         self.assertIn("503", msg)

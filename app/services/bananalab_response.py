@@ -108,6 +108,16 @@ def is_bananalab_paused_message(text: Any) -> bool:
     )
 
 
+def is_bananalab_upstream_no_image_message(text: Any) -> bool:
+    """BananaHub иногда возвращает failed job без картинки — обычно лечится повтором."""
+    lower = str(text or "").lower()
+    return (
+        "upstream returned no image" in lower
+        or "исходный поток не вернул изображение" in lower
+        or "upstream did not return an image" in lower
+    )
+
+
 def _looks_like_html(text: str) -> bool:
     lower = text.lower()
     return any(
@@ -160,6 +170,12 @@ def humanize_api_error(message: Any, http_status: Optional[int] = None) -> str:
 
     if is_bananalab_unavailable_message(text):
         return BANANALAB_PROVIDER_UNAVAILABLE_MESSAGE
+
+    if is_bananalab_upstream_no_image_message(text):
+        return (
+            "Провайдер BananaHub не вернул изображение (временный сбой upstream). "
+            "Попробуйте ещё раз — обычно помогает повтор."
+        )
 
     status_key = str(http_status) if http_status else None
     if status_key in _CLOUDFLARE_GATEWAY_MESSAGES and http_status and http_status >= 500:
