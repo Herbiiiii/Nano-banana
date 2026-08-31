@@ -33,13 +33,13 @@ class Settings(BaseSettings):
     PWD_SCHEMES: str = Field("bcrypt", env="PWD_SCHEMES")
     
     # BananaLab API
-    BANANALAB_API_BASE_URL: str = Field("https://bananahub.io/api", env="BANANALAB_API_BASE_URL")
+    BANANALAB_API_BASE_URL: str = Field("https://bananahub.app/api", env="BANANALAB_API_BASE_URL")
 
     # Legacy поле (используется как API key из UI; имя оставлено для совместимости)
     REPLICATE_API_TOKEN: str = Field("", env="REPLICATE_API_TOKEN")
 
     # Banana Lab (Nano Banana HTTP API)
-    BANANALAB_BASE_URL: str = Field("https://bananahub.io/api", env="BANANALAB_BASE_URL")
+    BANANALAB_BASE_URL: str = Field("https://bananahub.app/api", env="BANANALAB_BASE_URL")
     
     # Performance
     # По умолчанию запускаем только одну генерацию одновременно, чтобы уменьшить вероятность E003/rate-limit

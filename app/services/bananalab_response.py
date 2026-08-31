@@ -37,10 +37,10 @@ def absolute_job_status_url(base_url: str, data: Dict[str, Any]) -> Optional[str
 
 
 def _normalize_bananalab_job_url(url: str, base_url: str) -> str:
-    """После миграции на bananahub.io job URL иногда приходит без префикса /api."""
+    """После миграции на bananahub.* job URL иногда приходит без префикса /api."""
     if "/api/api/" in url:
         return url.replace("/api/api/", "/api/", 1)
-    for host in ("bananahub.io", "www.bananahub.io"):
+    for host in ("bananahub.app", "www.bananahub.app", "bananahub.io", "www.bananahub.io"):
         legacy = f"https://{host}/v1/jobs/"
         fixed = f"https://{host}/api/v1/jobs/"
         if url.startswith(legacy):

@@ -93,6 +93,21 @@ class TestBanalabJobUrl(unittest.TestCase):
         from app.services.bananalab_response import absolute_job_status_url
 
         u = absolute_job_status_url(
+            "https://bananahub.app/api",
+            {
+                "status_url": "/api/v1/jobs/019eb30e-1769-70ff-b648-e207a06b58d0",
+                "status": "queued",
+            },
+        )
+        self.assertEqual(
+            u,
+            "https://bananahub.app/api/v1/jobs/019eb30e-1769-70ff-b648-e207a06b58d0",
+        )
+
+    def test_bananahub_legacy_io_host_still_supported(self):
+        from app.services.bananalab_response import absolute_job_status_url
+
+        u = absolute_job_status_url(
             "https://bananahub.io/api",
             {
                 "status_url": "/api/v1/jobs/019eb30e-1769-70ff-b648-e207a06b58d0",

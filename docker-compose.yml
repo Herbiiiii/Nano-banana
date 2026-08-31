@@ -93,8 +93,6 @@ services:
   api:
     build: .
     container_name: nano_banana_api
-    extra_hosts:
-      - "bananahub.io:5.63.19.95"
     ports:
       - "127.0.0.1:8000:8000"
     environment:
@@ -112,8 +110,8 @@ services:
       - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
       - ALGORITHM=HS256
       - REPLICATE_API_TOKEN=${REPLICATE_API_TOKEN:-}
-      - BANANALAB_BASE_URL=${BANANALAB_BASE_URL:-https://bananahub.io/api}
-      - BANANALAB_API_BASE_URL=${BANANALAB_API_BASE_URL:-https://bananahub.io/api}
+      - BANANALAB_BASE_URL=${BANANALAB_BASE_URL:-https://bananahub.app/api}
+      - BANANALAB_API_BASE_URL=${BANANALAB_API_BASE_URL:-https://bananahub.app/api}
       - MAX_WORKERS=${MAX_WORKERS:-1}
       - MAX_CONCURRENT_GENERATIONS=${MAX_CONCURRENT_GENERATIONS:-1}
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:8000}
