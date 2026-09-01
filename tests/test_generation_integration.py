@@ -213,6 +213,12 @@ class TestHumanizeApiError(unittest.TestCase):
         self.assertIn("фильтр безопасности", msg.lower())
         self.assertIn("переформулируйте", msg.lower())
 
+    def test_openrouter_security_policy(self):
+        raw = "OpenRouter: Access denied by security policy."
+        self.assertTrue(is_content_policy_error(raw))
+        msg = humanize_api_error(raw)
+        self.assertIn("фильтр безопасности", msg.lower())
+
     def test_nested_detail_message(self):
         msg = humanize_api_error(
             {"detail": {"message": "Project is paused.", "field": None, "details": None}},

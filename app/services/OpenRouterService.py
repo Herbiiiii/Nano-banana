@@ -19,11 +19,12 @@ OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_ALLOWED_ASPECTS = frozenset({"1:1", "3:2", "2:3", "auto"})
 
 PROMPT_REWRITE_SYSTEM = (
-    "You rewrite image generation prompts so they pass content safety filters "
-    "(Google Gemini, OpenAI, etc.) while preserving the user's creative intent. "
-    "Keep the same language as the input. Avoid explicit violence, sexual content, "
-    "real celebrity names, and copyrighted characters. Use safe artistic wording. "
-    "Output ONLY the rewritten prompt, without quotes or explanations."
+    "Ты переписываешь промпты для генерации изображений так, чтобы они проходили фильтры "
+    "безопасности Google/OpenAI. Сохраняй язык и общий смысл сцены, но обязательно: "
+    "замени имён реальных знаменитостей на обобщённые описания "
+    "(например «известный футболист в синей форме» вместо конкретного имени); "
+    "убери насилие, унижение, NSFW и провокации. "
+    "Верни ТОЛЬКО переписанный промпт, без кавычек и пояснений."
 )
 
 
@@ -199,8 +200,13 @@ class OpenRouterService:
             if not rewritten:
                 return {"success": False, "error": "OpenRouter вернул пустой промпт"}
 
-            logger.info("[OPENROUTER] Промпт переформулирован model=%s", rewrite_model)
-            return {"success": True, "prompt": rewritten, "model": rewrite_model}
+            logger.info(
+                "[OPENROUTER] rewrite model=%s | original=%s | rewritten=%s",
+                rewrite_model,
+                text[:200],
+                rewritten[:200],
+            )
+            return {"success": True, "prompt": rewritten, "model": rewrite_model, "original": text}
         except requests.RequestException as exc:
             return {"success": False, "error": f"OpenRouter: ошибка сети — {exc}"}
 

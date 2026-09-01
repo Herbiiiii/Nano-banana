@@ -408,6 +408,61 @@ function updateRewritePromptUI() {
     group.style.display = hasProviderKey('openrouter') ? 'block' : 'none';
 }
 
+function providerBadgeLabel(provider) {
+    if (provider === 'bananalab') return 'nb_';
+    if (provider === 'openrouter') return 'GPT';
+    if (provider === 'replicate') return 'r8_';
+    return provider || '?';
+}
+
+function escapeHtmlText(value) {
+    return String(value || '')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function buildRewriteBlockHtml(extra = {}) {
+    const blocks = [];
+    if (extra.provider || extra.model_name) {
+        blocks.push(
+            `<div class="mb-3"><p class="mb-2"><strong><i class="fas fa-plug me-2"></i>Провайдер / модель:</strong></p>`
+            + `<p class="mb-0 small"><span class="badge bg-secondary me-2">${escapeHtmlText(providerBadgeLabel(extra.provider))}</span>`
+            + `<span class="text-info">${escapeHtmlText(extra.model_name || '—')}</span></p></div>`
+        );
+    }
+    if (extra.original_prompt) {
+        blocks.push(
+            `<div class="mb-3"><p class="mb-2"><strong><i class="fas fa-comment-dots me-2"></i>Исходный промпт:</strong></p>`
+            + `<p class="mb-0 small" style="opacity: 0.9; background: rgba(102, 126, 234, 0.08); padding: 0.75rem; border-radius: 6px; word-wrap: break-word;">${escapeHtmlText(extra.original_prompt)}</p></div>`
+        );
+    }
+    if (extra.rewritten_prompt) {
+        blocks.push(
+            `<div class="mb-3"><p class="mb-2"><strong><i class="fas fa-magic me-2"></i>Отправлено после GPT rewrite${extra.rewrite_model ? ` (${escapeHtmlText(extra.rewrite_model)})` : ''}:</strong></p>`
+            + `<p class="mb-0 small" style="opacity: 0.95; background: rgba(16, 185, 129, 0.12); padding: 0.75rem; border-radius: 6px; word-wrap: break-word;">${escapeHtmlText(extra.rewritten_prompt)}</p></div>`
+        );
+    }
+    if (extra.rewrite_error) {
+        blocks.push(
+            `<div class="mb-3 p-2" style="background: rgba(246, 173, 85, 0.15); border-radius: 6px;">`
+            + `<p class="mb-0 small text-warning"><strong>Rewrite не сработал:</strong> ${escapeHtmlText(extra.rewrite_error)}</p></div>`
+        );
+    }
+    return blocks.join('');
+}
+
+function buildRewriteHintHtml(gen) {
+    if (gen.rewritten_prompt) {
+        return `<p class="mt-2 mb-0 text-info small" style="max-height: 4.5em; overflow: hidden;"><strong>Rewrite:</strong> ${escapeHtmlText(gen.rewritten_prompt)}</p>`;
+    }
+    if (gen.rewrite_error) {
+        return `<p class="mt-2 mb-0 text-warning small"><strong>Rewrite:</strong> ${escapeHtmlText(gen.rewrite_error)}</p>`;
+    }
+    return '';
+}
+
 // Универсальные функции для работы с хранилищем (localStorage с fallback на sessionStorage)
 // Используем localStorage для надежности на мобильных устройствах и в приватном режиме
 function getStorage() {
@@ -1275,7 +1330,15 @@ function bindAdminGenerationsGridEvents(grid, viewableItems) {
                     gen.prompt || '',
                     gen.resolution || '',
                     gen.aspect_ratio || '',
-                    gen.error_message || null
+                    gen.error_message || null,
+                    {
+                        provider: gen.provider,
+                        model_name: gen.model_name,
+                        original_prompt: gen.original_prompt,
+                        rewritten_prompt: gen.rewritten_prompt,
+                        rewrite_model: gen.rewrite_model,
+                        rewrite_error: gen.rewrite_error,
+                    }
                 );
             } catch (err) {
                 showToast(`Ошибка: ${err.message}`, 'error');
@@ -2784,8 +2847,9 @@ async function loadGallery() {
                 const attemptHintHtml = (gen.status === 'pending' || gen.status === 'running')
                     ? '<p class="mt-2 mb-0 text-info small">Попытка ' + attemptNumber + '/' + maxRetries + '</p>'
                     : '';
+                const rewriteHint = buildRewriteHintHtml(gen);
                 const placeholderInner = gen.status === 'failed'
-                    ? '<div class="text-center"><i class="fas fa-exclamation-triangle text-danger" style="font-size: 3rem;"></i><p class="mt-3 mb-0 text-light fw-bold">Ошибка генерации</p><p class="mt-2 mb-0 text-danger small">' + (gen.error_message || 'Не удалось сгенерировать изображение').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;') + '</p></div>'
+                    ? '<div class="text-center"><i class="fas fa-exclamation-triangle text-danger" style="font-size: 3rem;"></i><p class="mt-3 mb-0 text-light fw-bold">Ошибка генерации</p><p class="mt-2 mb-0 text-danger small">' + (gen.error_message || 'Не удалось сгенерировать изображение').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;') + '</p>' + rewriteHint + '</div>'
                     : '<div class="text-center"><div class="spinner-border text-warning" role="status" style="width: 3rem; height: 3rem;"><span class="visually-hidden">Загрузка...</span></div><p class="mt-3 mb-0 text-light fw-bold">' + (gen.status === 'pending' ? 'В очереди...' : gen.status === 'running' ? 'Генерируется...' : gen.status === 'paused' ? 'Пауза модели, ожидаем...' : 'Ошибка') + '</p>' + attemptHintHtml + '</div>';
                 imageBlock = '<div class="position-absolute top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center" style="z-index: 1; background: linear-gradient(135deg, #1a1a2e 0%, #252547 100%); border-radius: 0 0 12px 12px;">' + placeholderInner + '</div>';
             }
@@ -2802,6 +2866,9 @@ async function loadGallery() {
             const dataImageUrl = hasImage ? gen.result_url.replace(/'/g, "\\'") : '';
             const dataPrompt = hasImage ? (gen.prompt || '').replace(/'/g, "\\'").replace(/"/g, '&quot;') : '';
             const cursorStyle = hasImage ? 'pointer' : 'default';
+            const providerBadgeHtml = gen.provider
+                ? `<span class="badge bg-dark border border-secondary" style="font-size: 0.62rem; opacity: 0.95;">${providerBadgeLabel(gen.provider)}</span>`
+                : '';
             const cardHtml = [
                 '<div class="card h-100 generation-card gallery-card-wrap" style="border-radius: 12px; overflow: hidden;">',
                 '  <div class="position-relative image-container" data-gen-id="' + gen.id + '" data-gallery-index="' + (hasImage ? galleryIndex : '') + '" data-image-url="' + dataImageUrl + '" data-prompt="' + dataPrompt + '" style="height: 350px; overflow: hidden !important; background: #1a1a2e; cursor: ' + cursorStyle + '; border-radius: 0 0 12px 12px !important; position: relative;">',
@@ -2809,6 +2876,7 @@ async function loadGallery() {
                 '  <div class="bg-dark d-flex align-items-center justify-content-center image-error position-absolute top-0 start-0 w-100 h-100" style="display: none !important; z-index: 2; background: linear-gradient(135deg, #1a1a2e 0%, #252547 100%) !important; pointer-events: none;"><div class="text-center"><i class="fas fa-exclamation-triangle text-warning mb-2" style="font-size: 2rem;"></i><p class="text-light mb-0">Ошибка загрузки изображения</p><small class="text-muted">Попробуйте обновить страницу</small></div></div>',
                 '  <div class="position-absolute top-0 end-0 m-2" style="z-index: 5; pointer-events: none; display: flex; flex-direction: column; align-items: flex-end; gap: 0.25rem;">',
                 '    <div style="display: flex; align-items: center; gap: 0.25rem; pointer-events: none;">',
+                providerBadgeHtml,
                 '      <button class="btn btn-sm generation-status-badge" disabled style="opacity: 1 !important; background: ' + statusBg + ' !important; border: 1px solid ' + statusBorder + ' !important; padding: 0.25rem 0.5rem; color: #ffffff !important; font-weight: 700; cursor: default; pointer-events: none; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);">' + statusText + '</button>',
                 infoBtnHtml,
                 '    </div>',
@@ -2921,7 +2989,15 @@ async function loadGallery() {
                                 gen.prompt || '',
                                 gen.resolution || '',
                                 gen.aspect_ratio || '',
-                                errorMsg  // null для старых генераций без ошибок
+                                errorMsg,
+                                {
+                                    provider: gen.provider,
+                                    model_name: gen.model_name,
+                                    original_prompt: gen.original_prompt,
+                                    rewritten_prompt: gen.rewritten_prompt,
+                                    rewrite_model: gen.rewrite_model,
+                                    rewrite_error: gen.rewrite_error,
+                                }
                             );
                         } else {
                             const errorData = await response.json().catch(() => ({}));
@@ -3486,7 +3562,7 @@ function closeFullscreenImage() {
 }
 
 // Функция для показа параметров генерации
-function showGenerationParams(id, prompt, resolution, aspectRatio, errorMessage) {
+function showGenerationParams(id, prompt, resolution, aspectRatio, errorMessage, extra = {}) {
     // Логируем полученные данные
     console.log('[SHOW_PARAMS] Получены параметры:', {
         id: id,
@@ -3534,17 +3610,20 @@ function showGenerationParams(id, prompt, resolution, aspectRatio, errorMessage)
         safeErrorMessage_preview: safeErrorMessage ? safeErrorMessage.substring(0, 100) : 'пусто'
     });
     
+    const rewriteBlockHtml = buildRewriteBlockHtml(extra);
+    
     const content = document.createElement('div');
     content.innerHTML = `
         <div class="d-flex justify-content-between align-items-center mb-3">
-            <h5 class="text-light mb-0"><i class="fas fa-info-circle me-2"></i>Параметры генерации</h5>
+            <h5 class="text-light mb-0"><i class="fas fa-info-circle me-2"></i>Параметры генерации #${id}</h5>
             <button class="btn btn-sm btn-link text-light p-0" onclick="closeGenerationParams()" style="font-size: 1.5rem; line-height: 1; cursor: pointer;">
                 <i class="fas fa-times"></i>
             </button>
         </div>
         <div class="text-light">
+            ${rewriteBlockHtml}
             <div class="mb-3">
-                <p class="mb-2"><strong><i class="fas fa-comment me-2"></i>Промпт:</strong></p>
+                <p class="mb-2"><strong><i class="fas fa-comment me-2"></i>Промпт в форме:</strong></p>
                 <p class="mb-0 small" style="opacity: 0.9; background: rgba(102, 126, 234, 0.1); padding: 0.75rem; border-radius: 6px; word-wrap: break-word;">${safePrompt || 'Не указано'}</p>
             </div>
             <div class="row mb-3">

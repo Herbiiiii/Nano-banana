@@ -83,6 +83,69 @@ def get_fallback_model(model_name: Optional[str]) -> Optional[str]:
     return FALLBACK_MODEL_BY_MODEL.get(model_name)
 
 
+def _rewrite_metadata_fields(metadata: Optional[dict]) -> dict:
+    meta = metadata or {}
+    return {
+        "provider": meta.get("provider"),
+        "original_prompt": meta.get("original_prompt"),
+        "rewritten_prompt": meta.get("rewritten_prompt"),
+        "rewrite_model": meta.get("rewrite_model"),
+        "rewrite_error": meta.get("rewrite_error"),
+    }
+
+
+def _apply_prompt_rewrite(
+    generation,
+    session,
+    generation_id: int,
+    prompt_for_generation: str,
+    request_data: dict,
+    keys: dict,
+) -> str:
+    if not request_data.get("rewrite_prompt"):
+        return prompt_for_generation
+
+    if not generation.generation_metadata:
+        generation.generation_metadata = {}
+    generation.generation_metadata["rewrite_requested"] = True
+    from sqlalchemy.orm.attributes import flag_modified
+
+    openrouter_key = keys.get("openrouter")
+    if not openrouter_key:
+        err = "Галочка переформулировки включена, но ключ OpenRouter (sk-or_) не сохранён"
+        generation.generation_metadata["rewrite_error"] = err
+        flag_modified(generation, "generation_metadata")
+        session.commit()
+        logger.warning("[GENERATION] %s (gen=%s)", err, generation_id)
+        return prompt_for_generation
+
+    rewrite_result = OpenRouterService(api_key=openrouter_key).rewrite_prompt(prompt_for_generation)
+    if rewrite_result.get("success") and rewrite_result.get("prompt"):
+        original = rewrite_result.get("original") or prompt_for_generation
+        rewritten = rewrite_result["prompt"]
+        generation.generation_metadata["original_prompt"] = original
+        generation.generation_metadata["rewritten_prompt"] = rewritten
+        generation.generation_metadata["rewrite_model"] = rewrite_result.get("model")
+        generation.generation_metadata.pop("rewrite_error", None)
+        flag_modified(generation, "generation_metadata")
+        session.commit()
+        logger.info(
+            "[GENERATION] rewrite OK gen=%s model=%s | ORIGINAL: %s | REWRITTEN: %s",
+            generation_id,
+            rewrite_result.get("model"),
+            original[:300],
+            rewritten[:300],
+        )
+        return rewritten
+
+    err = rewrite_result.get("error") or "Не удалось переформулировать промпт"
+    generation.generation_metadata["rewrite_error"] = err
+    flag_modified(generation, "generation_metadata")
+    session.commit()
+    logger.warning("[GENERATION] rewrite FAIL gen=%s: %s", generation_id, err)
+    return prompt_for_generation
+
+
 def _is_paused_error(error_message: str) -> bool:
     if not error_message:
         return False
@@ -442,31 +505,14 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                 )
 
                 prompt_for_generation = request_data.get("prompt") or ""
-                if request_data.get("rewrite_prompt"):
-                    openrouter_key = keys.get("openrouter")
-                    if openrouter_key:
-                        rewrite_result = OpenRouterService(api_key=openrouter_key).rewrite_prompt(prompt_for_generation)
-                        if rewrite_result.get("success") and rewrite_result.get("prompt"):
-                            if not generation.generation_metadata:
-                                generation.generation_metadata = {}
-                            generation.generation_metadata["original_prompt"] = prompt_for_generation
-                            generation.generation_metadata["rewritten_prompt"] = rewrite_result["prompt"]
-                            generation.generation_metadata["rewrite_model"] = rewrite_result.get("model")
-                            from sqlalchemy.orm.attributes import flag_modified
-                            flag_modified(generation, "generation_metadata")
-                            session.commit()
-                            prompt_for_generation = rewrite_result["prompt"]
-                            logger.info("[GENERATION] Промпт переформулирован для генерации %s", generation_id)
-                        else:
-                            logger.warning(
-                                "[GENERATION] Не удалось переформулировать промпт для %s: %s",
-                                generation_id,
-                                rewrite_result.get("error"),
-                            )
-                    else:
-                        logger.warning(
-                            "[GENERATION] rewrite_prompt=true, но ключ OpenRouter (sk-or_) не сохранён"
-                        )
+                prompt_for_generation = _apply_prompt_rewrite(
+                    generation,
+                    session,
+                    generation_id,
+                    prompt_for_generation,
+                    request_data,
+                    keys,
+                )
                 
                 # Генерируем изображение
                 result = generation_service.generate_image(
@@ -1025,7 +1071,8 @@ async def list_generations(
                     model_name=model_name,
                     retry_count=retry_count,
                     max_retries=max_retries,
-                    fallback_model=get_fallback_model(model_name)
+                    fallback_model=get_fallback_model(model_name),
+                    **_rewrite_metadata_fields(gen.generation_metadata),
                 ))
             
             # Логируем только активные процессы (running/pending), чтобы не засорять логи
@@ -1294,7 +1341,8 @@ async def get_generation_full(
             "reference_images": metadata.get("reference_image_urls", []),
             "result_url": generation.result_url,
             "status": generation.status,
-            "error_message": metadata.get('error')
+            "error_message": metadata.get('error'),
+            **_rewrite_metadata_fields(metadata),
         }
 
 

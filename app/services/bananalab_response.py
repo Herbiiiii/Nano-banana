@@ -178,6 +178,8 @@ CONTENT_POLICY_MARKERS = (
     "rai filter",
     "image_generation_user_error",
     "no image was generated",
+    "security policy",
+    "access denied",
 )
 
 CONTENT_POLICY_USER_MESSAGE = (

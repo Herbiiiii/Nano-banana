@@ -85,6 +85,11 @@ class ImageResponse(BaseModel):
     retry_count: Optional[int] = 0  # Количество уже выполненных ретраев
     max_retries: Optional[int] = 5  # Максимум ретраев для текущей генерации
     fallback_model: Optional[str] = None  # Рекомендуемая fallback-модель для быстрого перезапуска
+    provider: Optional[str] = None
+    original_prompt: Optional[str] = None
+    rewritten_prompt: Optional[str] = None
+    rewrite_model: Optional[str] = None
+    rewrite_error: Optional[str] = None
     
     class Config:
         from_attributes = True
