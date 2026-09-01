@@ -1058,6 +1058,198 @@ const registerForm = document.getElementById('registerForm');
 const apiKeyForm = document.getElementById('apiKeyForm');
 const notificationToast = new bootstrap.Toast(document.getElementById('notificationToast'));
 let adminPanelOpen = false;
+let adminGenerationsPage = 0;
+let adminGenerationsTotal = 0;
+
+function getAdminGenerationsPageSize() {
+    const raw = parseInt(document.getElementById('adminPageSize')?.value || '24', 10);
+    return Number.isFinite(raw) && raw > 0 ? raw : 24;
+}
+
+function buildAdminGenerationsQueryParams() {
+    const userId = document.getElementById('adminFilterUserId')?.value?.trim();
+    const status = document.getElementById('adminFilterStatus')?.value?.trim();
+    const model = document.getElementById('adminFilterModel')?.value?.trim();
+    const search = document.getElementById('adminFilterSearch')?.value?.trim();
+    const provider = document.getElementById('adminFilterProvider')?.value?.trim();
+    const errorOnly = document.getElementById('adminFilterErrorOnly')?.value?.trim();
+    const dateFrom = document.getElementById('adminFilterFrom')?.value;
+    const dateTo = document.getElementById('adminFilterTo')?.value;
+    const pageSize = getAdminGenerationsPageSize();
+    const params = new URLSearchParams();
+    params.set('limit', String(pageSize));
+    params.set('offset', String(adminGenerationsPage * pageSize));
+    if (userId) params.set('user_id', userId);
+    if (status) params.set('status', status);
+    if (model) params.set('model', model);
+    if (search) params.set('search', search);
+    if (provider) params.set('provider', provider);
+    if (errorOnly) params.set('error_only', errorOnly);
+    if (dateFrom) params.set('date_from', `${dateFrom}T00:00:00`);
+    if (dateTo) params.set('date_to', `${dateTo}T23:59:59`);
+    return params;
+}
+
+function updateAdminGenerationsPaginationUI(meta, shownCount) {
+    const statsEl = document.getElementById('adminGenerationsStats');
+    const pageLabel = document.getElementById('adminPageLabel');
+    const prevBtn = document.getElementById('adminPrevPageBtn');
+    const nextBtn = document.getElementById('adminNextPageBtn');
+    const total = meta?.total ?? shownCount ?? 0;
+    const limit = meta?.limit ?? getAdminGenerationsPageSize();
+    const offset = meta?.offset ?? adminGenerationsPage * limit;
+    adminGenerationsTotal = total;
+    const totalPages = Math.max(1, Math.ceil(total / limit) || 1);
+    const currentPage = Math.min(totalPages, Math.floor(offset / limit) + 1);
+    if (statsEl) {
+        const from = total ? offset + 1 : 0;
+        const to = Math.min(offset + (shownCount || 0), total);
+        statsEl.textContent = total
+            ? `Показано ${from}–${to} из ${total} генераций`
+            : 'Генераций не найдено';
+    }
+    if (pageLabel) pageLabel.textContent = `${currentPage} / ${totalPages}`;
+    if (prevBtn) prevBtn.disabled = currentPage <= 1;
+    if (nextBtn) nextBtn.disabled = currentPage >= totalPages;
+}
+
+function renderAdminGenerationCard(gen, galleryIndex, viewableItems) {
+    const col = document.createElement('div');
+    col.className = 'col';
+    col.setAttribute('data-generation-id', String(gen.id));
+
+    const hasImage = gen.status === 'completed' && gen.result_url;
+    const safePrompt = (gen.prompt || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const safeError = (gen.error || gen.error_message || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const userLabel = gen.username ? `${gen.username} (#${gen.user_id})` : `user ${gen.user_id}`;
+    const statusBg = gen.status === 'completed'
+        ? 'linear-gradient(135deg, rgba(74, 85, 104, 0.7) 0%, rgba(72, 187, 120, 0.5) 100%)'
+        : gen.status === 'failed'
+            ? 'linear-gradient(135deg, rgba(74, 85, 104, 0.7) 0%, rgba(229, 62, 62, 0.5) 100%)'
+            : gen.status === 'paused'
+                ? 'linear-gradient(135deg, rgba(74, 85, 104, 0.7) 0%, rgba(246, 173, 85, 0.6) 100%)'
+                : 'linear-gradient(135deg, rgba(74, 85, 104, 0.7) 0%, rgba(102, 126, 234, 0.5) 100%)';
+    const statusBorder = gen.status === 'completed'
+        ? 'rgba(72, 187, 120, 0.6)'
+        : gen.status === 'failed'
+            ? 'rgba(229, 62, 62, 0.6)'
+            : gen.status === 'paused'
+                ? 'rgba(246, 173, 85, 0.7)'
+                : 'rgba(102, 126, 234, 0.6)';
+    const statusText = gen.status === 'completed'
+        ? 'Завершено'
+        : gen.status === 'running'
+            ? 'Генерируется'
+            : gen.status === 'pending'
+                ? 'В очереди'
+                : gen.status === 'paused'
+                    ? 'Пауза модели'
+                    : 'Ошибка';
+
+    const imageBlock = hasImage
+        ? `<img src="${gen.result_url.replace(/"/g, '&quot;')}" class="card-img-top generation-image" style="height: 350px; width: 100%; object-fit: cover; position: absolute; inset: 0; z-index: 1; border-radius: 0 0 12px 12px;" alt="gen">`
+        : `<div class="position-absolute top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center" style="z-index: 1; background: linear-gradient(135deg, #1a1a2e 0%, #252547 100%); border-radius: 0 0 12px 12px;"><div class="text-center"><i class="fas fa-image text-muted" style="font-size: 2.2rem;"></i><p class="mt-2 mb-0 text-light small">${statusText}</p></div></div>`;
+
+    const downloadBtnHtml = hasImage
+        ? `<button type="button" class="btn btn-icon-only btn-download admin-gen-download" data-gen-id="${gen.id}" title="Скачать"><i class="fas fa-download"></i></button>`
+        : '';
+    const infoBtnHtml = (gen.status === 'completed' || gen.status === 'failed')
+        ? `<button type="button" class="btn btn-sm btn-link text-white p-1 admin-gen-info" data-gen-id="${gen.id}" title="Параметры"><i class="fas fa-info-circle" style="font-size: 0.75rem;"></i></button>`
+        : '';
+
+    col.innerHTML = `
+        <div class="card h-100 generation-card gallery-card-wrap" style="border-radius: 12px; overflow: hidden;">
+            <div class="position-relative image-container admin-gen-image-container"
+                 data-gen-id="${gen.id}"
+                 data-gallery-index="${hasImage ? galleryIndex : ''}"
+                 data-image-url="${hasImage ? gen.result_url.replace(/"/g, '&quot;') : ''}"
+                 data-prompt="${hasImage ? (gen.prompt || '').replace(/"/g, '&quot;') : ''}"
+                 style="height: 350px; overflow: hidden; background: #1a1a2e; cursor: ${hasImage ? 'pointer' : 'default'}; border-radius: 0 0 12px 12px; position: relative;">
+                ${imageBlock}
+                <div class="position-absolute top-0 end-0 m-2" style="z-index: 5; display: flex; flex-direction: column; align-items: flex-end; gap: 0.25rem;">
+                    <div style="display: flex; align-items: center; gap: 0.25rem;">
+                        <button class="btn btn-sm generation-status-badge" disabled style="opacity: 1 !important; background: ${statusBg} !important; border: 1px solid ${statusBorder} !important; padding: 0.25rem 0.5rem; color: #ffffff !important; font-weight: 700; cursor: default;">${statusText}</button>
+                        ${infoBtnHtml}
+                    </div>
+                </div>
+                <div class="prompt-and-buttons-overlay position-absolute bottom-0 start-0 w-100" style="z-index: 5; background: linear-gradient(to top, rgba(0,0,0,0.52) 0%, rgba(0,0,0,0.32) 50%, rgba(0,0,0,0) 100%); padding: 1rem; border-radius: 0 0 12px 12px; backdrop-filter: blur(6px);">
+                    <p class="text-light mb-1 small prompt-text" style="font-size: 0.7225rem; line-height: 1.19; padding: 0.5rem; border-radius: 4px; max-width: 100%; overflow-x: auto; overflow-y: hidden; white-space: nowrap;">${safePrompt}</p>
+                    <div class="small text-info mb-2">#${gen.id} | ${userLabel} | ${gen.model_name || ''} | ${gen.provider || 'unknown'}</div>
+                    ${safeError ? `<div class="small text-danger mb-2">${safeError}</div>` : ''}
+                    <div class="d-flex gap-2 justify-content-center align-items-center">
+                        ${downloadBtnHtml}
+                        <button type="button" class="btn btn-icon-only btn-edit admin-gen-insert" data-gen-id="${gen.id}" title="Вставить в форму"><i class="fas fa-edit"></i></button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    if (hasImage && viewableItems) {
+        viewableItems.push({ url: gen.result_url, prompt: gen.prompt || '' });
+    }
+    return col;
+}
+
+function bindAdminGenerationsGridEvents(grid, viewableItems) {
+    grid.setAttribute('data-gallery-items', JSON.stringify(viewableItems));
+
+    grid.querySelectorAll('.admin-gen-image-container[data-image-url]').forEach((container) => {
+        const imageUrl = container.getAttribute('data-image-url');
+        const idxStr = container.getAttribute('data-gallery-index');
+        const index = idxStr !== '' && idxStr !== null ? parseInt(idxStr, 10) : 0;
+        if (!imageUrl) return;
+        container.addEventListener('click', (e) => {
+            if (e.target.closest('.admin-gen-info')
+                || e.target.closest('.admin-gen-insert')
+                || e.target.closest('.admin-gen-download')
+                || e.target.closest('.prompt-and-buttons-overlay')
+                || e.target.closest('.generation-status-badge')) {
+                return;
+            }
+            openFullscreenCarousel(viewableItems, index >= 0 ? index : 0);
+        });
+    });
+
+    grid.querySelectorAll('.admin-gen-download').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const genId = parseInt(btn.getAttribute('data-gen-id'), 10);
+            const gen = (window._adminGenerationsCache || []).find((g) => g.id === genId);
+            if (gen?.result_url) {
+                downloadImage(gen.result_url, gen.prompt || `gen_${genId}`);
+            }
+        });
+    });
+
+    grid.querySelectorAll('.admin-gen-insert').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const genId = parseInt(btn.getAttribute('data-gen-id'), 10);
+            if (genId) adminInsertToForm(genId);
+        });
+    });
+
+    grid.querySelectorAll('.admin-gen-info').forEach((btn) => {
+        btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const genId = parseInt(btn.getAttribute('data-gen-id'), 10);
+            if (!genId) return;
+            try {
+                const gen = await apiAdminGet(`/generations/${genId}`);
+                showGenerationParams(
+                    gen.id,
+                    gen.prompt || '',
+                    gen.resolution || '',
+                    gen.aspect_ratio || '',
+                    gen.error_message || null
+                );
+            } catch (err) {
+                showToast(`Ошибка: ${err.message}`, 'error');
+            }
+        });
+    });
+}
 
 function toggleAdminMenuVisibility() {
     const adminMenuItem = document.getElementById('adminMenuItem');
@@ -1071,6 +1263,7 @@ function showAdminPanel(show) {
     if (!panel) return;
     panel.style.display = adminPanelOpen ? 'flex' : 'none';
     if (adminPanelOpen) {
+        adminGenerationsPage = 0;
         loadAdminFilterOptions();
         loadAdminOverview();
         loadAdminUsers();
@@ -1185,88 +1378,49 @@ async function loadAdminUsers() {
     }
 }
 
-async function loadAdminGenerations() {
+async function loadAdminGenerations(resetPage = false) {
     if (!currentUser?.is_admin) return;
+    if (resetPage) adminGenerationsPage = 0;
     const grid = document.getElementById('adminGenerationsGrid');
     if (!grid) return;
-    const userId = document.getElementById('adminFilterUserId')?.value?.trim();
-    const status = document.getElementById('adminFilterStatus')?.value?.trim();
-    const model = document.getElementById('adminFilterModel')?.value?.trim();
-    const search = document.getElementById('adminFilterSearch')?.value?.trim();
-    const provider = document.getElementById('adminFilterProvider')?.value?.trim();
-    const errorOnly = document.getElementById('adminFilterErrorOnly')?.value?.trim();
-    const dateFrom = document.getElementById('adminFilterFrom')?.value;
-    const dateTo = document.getElementById('adminFilterTo')?.value;
-
-    const params = new URLSearchParams();
-    params.set('limit', '60');
-    if (userId) params.set('user_id', userId);
-    if (status) params.set('status', status);
-    if (model) params.set('model', model);
-    if (search) params.set('search', search);
-    if (provider) params.set('provider', provider);
-    if (errorOnly) params.set('error_only', errorOnly);
-    if (dateFrom) params.set('date_from', `${dateFrom}T00:00:00`);
-    if (dateTo) params.set('date_to', `${dateTo}T23:59:59`);
 
     try {
-        const data = await apiAdminGet(`/generations?${params.toString()}`);
-        grid.innerHTML = '';
+        const data = await apiAdminGet(`/generations?${buildAdminGenerationsQueryParams().toString()}`);
         const rows = data.generations || [];
+        window._adminGenerationsCache = rows;
+        grid.innerHTML = '';
+
         if (!rows.length) {
-            grid.innerHTML = '<div class="col-12"><div class="alert alert-info">По фильтрам ничего не найдено</div></div>';
+            grid.innerHTML = '<div class="col-12"><div class="alert alert-info mb-0">По фильтрам ничего не найдено</div></div>';
+            updateAdminGenerationsPaginationUI(data.meta, 0);
             return;
         }
-        rows.forEach(gen => {
-            const col = document.createElement('div');
-            col.className = 'col';
-            const safePrompt = (gen.prompt || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            const safeError = (gen.error || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            const statusBg = gen.status === 'completed'
-                ? 'linear-gradient(135deg, rgba(74, 85, 104, 0.7) 0%, rgba(72, 187, 120, 0.5) 100%)'
-                : gen.status === 'failed'
-                    ? 'linear-gradient(135deg, rgba(74, 85, 104, 0.7) 0%, rgba(229, 62, 62, 0.5) 100%)'
-                    : gen.status === 'paused'
-                        ? 'linear-gradient(135deg, rgba(74, 85, 104, 0.7) 0%, rgba(246, 173, 85, 0.6) 100%)'
-                        : 'linear-gradient(135deg, rgba(74, 85, 104, 0.7) 0%, rgba(102, 126, 234, 0.5) 100%)';
-            const statusBorder = gen.status === 'completed'
-                ? 'rgba(72, 187, 120, 0.6)'
-                : gen.status === 'failed'
-                    ? 'rgba(229, 62, 62, 0.6)'
-                    : gen.status === 'paused'
-                        ? 'rgba(246, 173, 85, 0.7)'
-                        : 'rgba(102, 126, 234, 0.6)';
-            const statusText = gen.status === 'completed'
-                ? 'Завершено'
-                : gen.status === 'running'
-                    ? 'Генерируется'
-                    : gen.status === 'pending'
-                        ? 'В очереди'
-                        : gen.status === 'paused'
-                            ? 'Пауза модели'
-                            : 'Ошибка';
-            const imageBlock = gen.result_url
-                ? `<img src="${gen.result_url}" class="card-img-top generation-image" style="height: 350px; width: 100%; object-fit: cover; position: absolute; inset: 0; z-index: 1; border-radius: 0 0 12px 12px;" alt="gen">`
-                : `<div class="position-absolute top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center" style="z-index: 1; background: linear-gradient(135deg, #1a1a2e 0%, #252547 100%); border-radius: 0 0 12px 12px;"><div class="text-center"><i class="fas fa-image text-muted" style="font-size: 2.2rem;"></i><p class="mt-2 mb-0 text-light small">${statusText}</p></div></div>`;
-            col.innerHTML = `
-                <div class="card h-100 generation-card gallery-card-wrap" style="border-radius: 12px; overflow: hidden;">
-                    <div class="position-relative image-container" style="height: 350px; overflow: hidden !important; background: #1a1a2e; border-radius: 0 0 12px 12px !important; position: relative;">
-                        ${imageBlock}
-                        <div class="position-absolute top-0 end-0 m-2" style="z-index: 5; display: flex; flex-direction: column; align-items: flex-end; gap: 0.25rem;">
-                            <button class="btn btn-sm generation-status-badge" disabled style="opacity: 1 !important; background: ${statusBg} !important; border: 1px solid ${statusBorder} !important; padding: 0.25rem 0.5rem; color: #ffffff !important; font-weight: 700; cursor: default;">${statusText}</button>
-                        </div>
-                        <div class="prompt-and-buttons-overlay position-absolute bottom-0 start-0 w-100" style="z-index: 5; background: linear-gradient(to top, rgba(0,0,0,0.52) 0%, rgba(0,0,0,0.32) 50%, rgba(0,0,0,0) 100%); padding: 1rem; border-radius: 0 0 12px 12px; backdrop-filter: blur(6px);">
-                            <p class="text-light mb-1 small prompt-text" style="font-size: 0.7225rem; line-height: 1.19; padding: 0.5rem; border-radius: 4px; max-width: 100%; overflow-x: auto; overflow-y: hidden; white-space: nowrap;">${safePrompt}</p>
-                            <div class="small text-info">#${gen.id} | user ${gen.user_id} | ${gen.model_name || ''} | ${gen.provider || 'unknown'}</div>
-                            ${safeError ? `<div class="small text-danger mt-2">${safeError}</div>` : ''}
-                        </div>
-                    </div>
-                </div>
-            `;
-            grid.appendChild(col);
+
+        const viewableItems = [];
+        let viewableIndex = 0;
+        rows.forEach((gen) => {
+            const hasImage = gen.status === 'completed' && gen.result_url;
+            const galleryIndex = hasImage ? viewableIndex++ : -1;
+            grid.appendChild(renderAdminGenerationCard(gen, galleryIndex, viewableItems));
         });
+
+        bindAdminGenerationsGridEvents(grid, viewableItems);
+        updateAdminGenerationsPaginationUI(data.meta, rows.length);
     } catch (e) {
-        grid.innerHTML = `<div class="col-12"><div class="alert alert-warning">Ошибка загрузки генераций: ${e.message}</div></div>`;
+        grid.innerHTML = `<div class="col-12"><div class="alert alert-warning mb-0">Ошибка загрузки генераций: ${e.message}</div></div>`;
+    }
+}
+
+async function adminInsertToForm(id) {
+    try {
+        const gen = await apiAdminGet(`/generations/${id}`);
+        if (adminPanelOpen) {
+            showAdminPanel(false);
+        }
+        await populateFormFromGeneration(gen);
+        showToast('Параметры пользователя вставлены в вашу форму генерации', 'success');
+    } catch (error) {
+        showToast(`Ошибка: ${error.message}`, 'error');
     }
 }
 
@@ -1848,7 +2002,7 @@ function setupEventListeners() {
     if (adminApplyFiltersBtn) {
         adminApplyFiltersBtn.addEventListener('click', () => {
             loadAdminOverview();
-            loadAdminGenerations();
+            loadAdminGenerations(true);
         });
     }
     const adminRefreshOverviewBtn = document.getElementById('adminRefreshOverviewBtn');
@@ -1864,7 +2018,31 @@ function setupEventListeners() {
     if (adminFilterUserId) {
         adminFilterUserId.addEventListener('change', () => {
             loadAdminOverview();
-            loadAdminGenerations();
+            loadAdminGenerations(true);
+        });
+    }
+    const adminPageSize = document.getElementById('adminPageSize');
+    if (adminPageSize) {
+        adminPageSize.addEventListener('change', () => loadAdminGenerations(true));
+    }
+    const adminPrevPageBtn = document.getElementById('adminPrevPageBtn');
+    if (adminPrevPageBtn) {
+        adminPrevPageBtn.addEventListener('click', () => {
+            if (adminGenerationsPage > 0) {
+                adminGenerationsPage -= 1;
+                loadAdminGenerations();
+            }
+        });
+    }
+    const adminNextPageBtn = document.getElementById('adminNextPageBtn');
+    if (adminNextPageBtn) {
+        adminNextPageBtn.addEventListener('click', () => {
+            const pageSize = getAdminGenerationsPageSize();
+            const totalPages = Math.max(1, Math.ceil(adminGenerationsTotal / pageSize) || 1);
+            if (adminGenerationsPage + 1 < totalPages) {
+                adminGenerationsPage += 1;
+                loadAdminGenerations();
+            }
         });
     }
     const adminUsersTableBody = document.getElementById('adminUsersTableBody');
@@ -2834,6 +3012,100 @@ function updateGalleryStats(generations, meta) {
     }
 }
 
+// Заполнение формы параметрами генерации (личная или админская)
+async function populateFormFromGeneration(gen) {
+    document.getElementById('prompt').value = gen.prompt || '';
+    document.getElementById('negativePrompt').value = gen.negative_prompt || '';
+    document.getElementById('resolution').value = gen.resolution || '1K';
+    const aspectRatioValue = gen.aspect_ratio || '1:1';
+    document.getElementById('aspectRatio').value = aspectRatioValue;
+    selectAspectRatio(aspectRatioValue);
+    document.getElementById('numSteps').value = gen.num_inference_steps || 50;
+    document.getElementById('guidance').value = gen.guidance_scale || 7.5;
+    document.getElementById('seed').value = gen.seed || '';
+
+    if (gen.model_name) {
+        selectModel(gen.model_name, { silent: true });
+    }
+    updateParamsForModel();
+
+    referenceImages = [];
+    aspectRatioAutoSelected = false;
+    updateReferencePreview();
+
+    const generationMode = gen.generation_mode || 'text-to-image';
+    const modeRadio = document.querySelector(`input[name="generationMode"][value="${generationMode}"]`);
+    if (modeRadio) {
+        modeRadio.checked = true;
+        modeRadio.dispatchEvent(new Event('change'));
+    }
+
+    const referenceSection = document.getElementById('referenceImagesSection');
+    if (referenceSection) {
+        if (generationMode === 'image-to-image' && !isImagenModel()) {
+            referenceSection.style.display = 'block';
+        } else {
+            referenceSection.style.display = 'none';
+        }
+    }
+
+    const refs = Array.isArray(gen.reference_images) ? gen.reference_images : [];
+    if (refs.length > 0) {
+        let loadedCount = 0;
+        const finishIfDone = () => {
+            loadedCount += 1;
+            if (loadedCount >= refs.length) {
+                updateReferencePreview();
+                updateAspectRatioOptions();
+            }
+        };
+
+        refs.forEach((imgUrl, idx) => {
+            if (!imgUrl) {
+                finishIfDone();
+                return;
+            }
+
+            const addRefFromDataUrl = (dataUrl) => {
+                const img = new Image();
+                img.onload = () => {
+                    const aspectRatio = calculateAspectRatio(img.width, img.height);
+                    referenceImages.push({
+                        file: null,
+                        dataUrl,
+                        id: Date.now() + Math.random() + idx,
+                        aspectRatio,
+                        width: img.width,
+                        height: img.height,
+                        originalRatio: `${img.width}:${img.height}`,
+                    });
+                    finishIfDone();
+                };
+                img.onerror = finishIfDone;
+                img.src = dataUrl;
+            };
+
+            if (imgUrl.startsWith('data:image')) {
+                addRefFromDataUrl(imgUrl);
+            } else if (imgUrl.startsWith('http')) {
+                fetch(imgUrl)
+                    .then((resp) => resp.blob())
+                    .then((blob) => {
+                        const reader = new FileReader();
+                        reader.onload = (e) => addRefFromDataUrl(e.target.result);
+                        reader.onerror = finishIfDone;
+                        reader.readAsDataURL(blob);
+                    })
+                    .catch(finishIfDone);
+            } else {
+                finishIfDone();
+            }
+        });
+    }
+
+    document.querySelector('.col-lg-4')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 // Редактирование генерации (заполнение формы параметрами)
 async function editGeneration(id) {
     try {
@@ -2848,126 +3120,8 @@ async function editGeneration(id) {
         }
 
         const gen = await response.json();
-        
-        // Заполняем форму
-        document.getElementById('prompt').value = gen.prompt || '';
-        document.getElementById('negativePrompt').value = gen.negative_prompt || '';
-        document.getElementById('resolution').value = gen.resolution || '1K';
-        const aspectRatioValue = gen.aspect_ratio || '1:1';
-        document.getElementById('aspectRatio').value = aspectRatioValue;
-        selectAspectRatio(aspectRatioValue);
-        document.getElementById('numSteps').value = gen.num_inference_steps || 50;
-        document.getElementById('guidance').value = gen.guidance_scale || 7.5;
-        document.getElementById('seed').value = gen.seed || '';
-        
-        // Восстанавливаем модель из генерации
-        if (gen.model_name) {
-            document.getElementById('modelName').value = gen.model_name;
-            setSelectedModel(gen.model_name);
-        }
-        
-        // Очищаем старые референсы перед загрузкой новых
-        referenceImages = [];
-        aspectRatioAutoSelected = false;
-        updateReferencePreview();
-        
-        // Устанавливаем режим генерации
-        const generationMode = gen.generation_mode || 'text-to-image';
-        const modeRadio = document.querySelector(`input[name="generationMode"][value="${generationMode}"]`);
-        if (modeRadio) {
-            modeRadio.checked = true;
-            // Триггерим событие change для обновления UI
-            modeRadio.dispatchEvent(new Event('change'));
-        }
-        
-        // Показываем/скрываем секцию референсов в зависимости от режима и модели
-        const referenceSection = document.getElementById('referenceImagesSection');
-        if (generationMode === 'image-to-image' && !isImagenModel()) {
-            referenceSection.style.display = 'block';
-        } else {
-            referenceSection.style.display = 'none';
-        }
-        
-        // Загружаем референсные изображения если есть
-        if (gen.reference_images && gen.reference_images.length > 0) {
-            
-            for (let idx = 0; idx < gen.reference_images.length; idx++) {
-                const imgUrl = gen.reference_images[idx];
-                if (imgUrl && (imgUrl.startsWith('data:image') || imgUrl.startsWith('http'))) {
-                    // Создаем объект изображения для определения размеров
-                    const img = new Image();
-                    img.onload = () => {
-                        const aspectRatio = calculateAspectRatio(img.width, img.height);
-                        const refObj = {
-                            file: null, // Файл не сохраняется, только dataUrl
-                            dataUrl: imgUrl,
-                            id: Date.now() + Math.random() + idx,
-                            aspectRatio: aspectRatio,
-                            width: img.width,
-                            height: img.height,
-                            originalRatio: `${img.width}:${img.height}`
-                        };
-                        referenceImages.push(refObj);
-                        console.log(`[EDIT] Загружен референс ${referenceImages.length} из сохраненной генерации: ${img.width}x${img.height} → ${aspectRatio}`);
-                        
-                        // Обновляем превью после загрузки всех изображений
-                        if (referenceImages.length === gen.reference_images.length) {
-                            updateReferencePreview();
-                            updateAspectRatioOptions();
-                        }
-                    };
-                    img.onerror = () => {
-                        console.error(`[EDIT] Ошибка загрузки референсного изображения ${idx + 1}`);
-                    };
-                    img.src = imgUrl;
-                } else if (imgUrl.startsWith('http')) {
-                    // URL изображение - загружаем и конвертируем в base64
-                    try {
-                        const imgResponse = await fetch(imgUrl);
-                        const blob = await imgResponse.blob();
-                        const reader = new FileReader();
-                        reader.onload = (e) => {
-                            const img = new Image();
-                            img.onload = () => {
-                                const aspectRatio = calculateAspectRatio(img.width, img.height);
-                                const refObj = {
-                                    file: null,
-                                    dataUrl: e.target.result,
-                                    id: Date.now() + Math.random() + idx,
-                                    aspectRatio: aspectRatio,
-                                    width: img.width,
-                                    height: img.height,
-                                    originalRatio: `${img.width}:${img.height}`
-                                };
-                                referenceImages.push(refObj);
-                                console.log(`[EDIT] Загружен референс ${referenceImages.length} из URL: ${img.width}x${img.height} → ${aspectRatio}`);
-                                
-                                // Обновляем превью после загрузки всех изображений
-                                if (referenceImages.length === gen.reference_images.length) {
-                                    updateReferencePreview();
-                                    updateAspectRatioOptions();
-                                }
-                            };
-                            img.onerror = () => {
-                                console.error(`[EDIT] Ошибка обработки изображения ${idx + 1} из URL`);
-                            };
-                            img.src = e.target.result;
-                        };
-                        reader.onerror = () => {
-                            console.error(`[EDIT] Ошибка чтения blob ${idx + 1}`);
-                        };
-                        reader.readAsDataURL(blob);
-                    } catch (e) {
-                        console.error(`[EDIT] Ошибка загрузки референсного изображения ${idx + 1} с URL:`, e);
-                    }
-                }
-            }
-        }
-        
-        // Прокручиваем к форме
-        document.querySelector('.col-lg-4').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        await populateFormFromGeneration(gen);
         showToast('Форма заполнена параметрами генерации', 'success');
-
     } catch (error) {
         showToast(`Ошибка: ${error.message}`, 'error');
     }

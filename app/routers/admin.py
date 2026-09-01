@@ -68,6 +68,31 @@ def _infer_provider(gen: Generation) -> str:
     return "unknown"
 
 
+def _generation_full_payload(gen: Generation, username: Optional[str] = None) -> dict:
+    metadata = gen.generation_metadata or {}
+    model_name = gen.model_name or metadata.get("model_name") or "nano-banana-pro"
+    return {
+        "id": gen.id,
+        "user_id": gen.user_id,
+        "username": username,
+        "prompt": gen.prompt,
+        "negative_prompt": gen.negative_prompt,
+        "generation_mode": gen.generation_mode,
+        "resolution": gen.resolution,
+        "aspect_ratio": gen.aspect_ratio,
+        "guidance_scale": gen.guidance_scale,
+        "num_inference_steps": gen.num_inference_steps,
+        "seed": gen.seed,
+        "model_name": model_name,
+        "reference_images": metadata.get("reference_image_urls") or [],
+        "result_url": gen.result_url,
+        "status": gen.status,
+        "error_message": metadata.get("error"),
+        "provider": _infer_provider(gen),
+        "created_at": gen.created_at.isoformat() if gen.created_at else None,
+    }
+
+
 def _estimate_cost_usd(gen: Generation) -> float:
     model = (gen.model_name or "nano-banana-pro").lower()
     resolution = (gen.resolution or "1K").upper()
@@ -238,6 +263,12 @@ async def admin_list_generations(
         rows = query.order_by(Generation.created_at.desc()).offset(offset).limit(limit).all()
         total = query.count()
 
+        user_ids = {g.user_id for g in rows}
+        users_map = {}
+        if user_ids:
+            for u in session.query(User).filter(User.id.in_(user_ids)).all():
+                users_map[u.id] = u.username
+
         payload = []
         for gen in rows:
             inferred_provider = _infer_provider(gen)
@@ -248,18 +279,38 @@ async def admin_list_generations(
                 {
                     "id": gen.id,
                     "user_id": gen.user_id,
+                    "username": users_map.get(gen.user_id),
                     "prompt": gen.prompt,
                     "status": gen.status,
                     "model_name": gen.model_name,
                     "resolution": gen.resolution,
+                    "aspect_ratio": gen.aspect_ratio,
                     "result_url": gen.result_url,
                     "error": metadata.get("error"),
+                    "error_message": metadata.get("error"),
                     "created_at": gen.created_at.isoformat() if gen.created_at else None,
                     "provider": inferred_provider,
                 }
             )
 
         return {"generations": payload, "meta": {"total": total, "limit": limit, "offset": offset}}
+
+
+@router.get("/generations/{generation_id}")
+async def admin_get_generation(
+    generation_id: int,
+    user: Annotated[TokenPayload, Depends(auth_service.get_current_user)],
+):
+    """Полные параметры генерации любого пользователя — для вставки в форму админом."""
+    _require_admin(user)
+    _rate_limit_admin_read(user.user_id, "generation_detail")
+    with db_service.get_session() as session:
+        gen = session.query(Generation).filter(Generation.id == generation_id).first()
+        if not gen:
+            raise HTTPException(status_code=404, detail="Генерация не найдена")
+        owner = session.query(User).filter(User.id == gen.user_id).first()
+        username = owner.username if owner else None
+        return _generation_full_payload(gen, username=username)
 
 
 @router.get("/overview")
