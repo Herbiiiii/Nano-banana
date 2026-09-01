@@ -61,6 +61,7 @@ class ImageGenerationRequest(BaseModel):
     reference_images: Optional[List[str]] = None  # URLs или base64 изображений
     api_key: Optional[str] = None  # Replicate (r8_…), Banana Lab (nb_…) или OpenRouter (sk-or_…)
     model_name: Optional[str] = None  # Имя модели (например, "nano-banana-pro", "gemini-2.5-flash-image")
+    rewrite_prompt: Optional[bool] = False  # Переформулировать промпт через OpenRouter перед генерацией
 
 class ImageGenerationResponse(BaseModel):
     status: str

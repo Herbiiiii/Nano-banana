@@ -3,7 +3,7 @@ import unittest
 
 from app.services.generation_prompt import enhance_prompt_for_image_generation
 from app.services.image_api_provider import infer_image_api_provider
-from app.services.bananalab_response import detail_from_response_body, find_image_in_json, humanize_api_error
+from app.services.bananalab_response import detail_from_response_body, find_image_in_json, humanize_api_error, is_content_policy_error
 
 
 class TestProvider(unittest.TestCase):
@@ -32,11 +32,14 @@ class TestImageModels(unittest.TestCase):
             "sk-or-v1-test",
         )
 
-    def test_nano_prefers_bananalab(self):
+    def test_nano_models_use_single_provider(self):
         from app.services.image_models import get_provider_for_model
 
         keys = {"replicate": "r8_x", "bananalab": "nb_x", "openrouter": "sk-or_x"}
         self.assertEqual(get_provider_for_model("nano-banana-pro", keys), "bananalab")
+        self.assertEqual(get_provider_for_model("nano-banana-pro-r8", keys), "replicate")
+        self.assertIsNone(get_provider_for_model("nano-banana-pro", {"replicate": "r8_x", "bananalab": "", "openrouter": ""}))
+        self.assertIsNone(get_provider_for_model("nano-banana-pro-r8", {"replicate": "", "bananalab": "nb_x", "openrouter": ""}))
 
 
 class TestPrompt(unittest.TestCase):
@@ -202,6 +205,13 @@ class TestHumanizeApiError(unittest.TestCase):
         msg = humanize_api_error({"detail": "Project is paused."}, 503)
         self.assertIn("на паузе", msg.lower())
         self.assertNotIn("перегружен", msg.lower())
+
+    def test_content_policy_error_hint(self):
+        raw = "Request blocked by safety moderation filter"
+        self.assertTrue(is_content_policy_error(raw))
+        msg = humanize_api_error(raw)
+        self.assertIn("фильтр безопасности", msg.lower())
+        self.assertIn("переформулируйте", msg.lower())
 
     def test_nested_detail_message(self):
         msg = humanize_api_error(

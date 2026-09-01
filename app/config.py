@@ -60,6 +60,7 @@ class Settings(BaseSettings):
     # OpenRouter Image API (sk-or_…)
     OPENROUTER_HTTP_REFERER: str = Field("", env="OPENROUTER_HTTP_REFERER")
     OPENROUTER_X_TITLE: str = Field("Nano Banana Pro", env="OPENROUTER_X_TITLE")
+    OPENROUTER_PROMPT_REWRITE_MODEL: str = Field("openai/gpt-4o-mini", env="OPENROUTER_PROMPT_REWRITE_MODEL")
 
     # Performance
     # По умолчанию запускаем только одну генерацию одновременно, чтобы уменьшить вероятность E003/rate-limit

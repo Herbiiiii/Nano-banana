@@ -15,19 +15,22 @@ const PROVIDER_COLORS = {
     bananalab: '#f59e0b',
     replicate: '#3b82f6',
     openrouter: '#10b981',
-    mixed: '#a855f7',
 };
 
 const PROVIDER_LABELS = {
     bananalab: 'BananaHub (nb_)',
     replicate: 'Replicate (r8_)',
     openrouter: 'OpenRouter GPT (sk-or_)',
-    mixed: 'Nano Banana (nb_ или r8_)',
 };
 
 // Модели Imagen: только описание, соотношение сторон, seed
 const IMAGEN_MODEL_IDS = ['imagen-4', 'imagen-4-fast', 'imagen-4-ultra'];
-const GPT_OPENROUTER_MODEL_IDS = ['gpt-5-image', 'gpt-5-image-mini'];
+const GPT_OPENROUTER_MODEL_IDS = [
+    'gpt-image-2',
+    'gpt-image-1-mini',
+    'gpt-5-image',
+    'gpt-5-image-mini',
+];
 
 function hasProviderKey(provider) {
     return !!userKeyFlags[provider];
@@ -52,6 +55,20 @@ function resolveProviderForModel(modelId) {
     return providers[0] || 'unknown';
 }
 
+function equivalentModelForKeys(modelId) {
+    if (!modelId) return modelId;
+    if (modelHasRequiredKey(modelId)) return modelId;
+    if (modelId.includes('nano-banana') && !modelId.endsWith('-r8')) {
+        const r8Id = `${modelId}-r8`;
+        if (availableModelsMeta[r8Id] && modelHasRequiredKey(r8Id)) return r8Id;
+    }
+    if (modelId.endsWith('-r8')) {
+        const baseId = modelId.slice(0, -3);
+        if (availableModelsMeta[baseId] && modelHasRequiredKey(baseId)) return baseId;
+    }
+    return modelId;
+}
+
 function isBananalabKey() {
     return resolveProviderForModel(document.getElementById('modelName')?.value) === 'bananalab';
 }
@@ -60,7 +77,6 @@ const PROVIDER_BADGE = {
     bananalab: 'nb_',
     replicate: 'r8_',
     openrouter: 'GPT',
-    mixed: 'nb+r8',
 };
 
 function inferDefaultModelMeta(modelId) {
@@ -72,12 +88,20 @@ function inferDefaultModelMeta(modelId) {
             providers: ['openrouter'],
         };
     }
+    if (modelId.endsWith('-r8') && modelId.includes('nano-banana')) {
+        return {
+            display_name: modelId.replace(/-r8$/, ''),
+            color: 'replicate',
+            group: 'replicate',
+            providers: ['replicate'],
+        };
+    }
     if (modelId.includes('nano-banana')) {
         return {
             display_name: modelId,
-            color: 'mixed',
-            group: 'mixed',
-            providers: ['bananalab', 'replicate'],
+            color: 'bananalab',
+            group: 'bananalab',
+            providers: ['bananalab'],
         };
     }
     return {
@@ -101,13 +125,14 @@ function ensureModelsMetaFromSelect() {
     });
 }
 
-function modelProviderBadgeClass(colorKey) {
-    return `model-provider-badge model-badge-${colorKey || 'replicate'}`;
+function modelProviderBadgeClass(meta, modelId) {
+    const provider = resolveProviderForModel(modelId);
+    return `model-provider-badge model-badge-${provider || meta?.color || 'replicate'}`;
 }
 
-function modelProviderBadgeText(meta) {
-    const key = meta?.color || 'replicate';
-    return PROVIDER_BADGE[key] || key;
+function modelProviderBadgeText(meta, modelId) {
+    const provider = resolveProviderForModel(modelId);
+    return PROVIDER_BADGE[provider] || PROVIDER_BADGE.replicate;
 }
 
 function closeAllCustomDropdowns(exceptMenuId) {
@@ -139,11 +164,11 @@ function buildModelDropdownMenu() {
     menu.innerHTML = '';
 
     const groupsOrder = [
-        { key: 'mixed', label: PROVIDER_LABELS.mixed },
+        { key: 'bananalab', label: PROVIDER_LABELS.bananalab },
         { key: 'replicate', label: PROVIDER_LABELS.replicate },
         { key: 'openrouter', label: PROVIDER_LABELS.openrouter },
     ];
-    const byGroup = { mixed: [], replicate: [], openrouter: [] };
+    const byGroup = { bananalab: [], replicate: [], openrouter: [] };
 
     Object.entries(availableModelsMeta).forEach(([modelId, meta]) => {
         const groupKey = meta.group || meta.color || 'replicate';
@@ -159,12 +184,12 @@ function buildModelDropdownMenu() {
         items.forEach(([modelId, meta]) => {
             const enabled = modelHasRequiredKey(modelId);
             const item = document.createElement('div');
-            item.className = `custom-dropdown-item model-dropdown-item model-tone-${meta.color || 'replicate'}`;
+            item.className = `custom-dropdown-item model-dropdown-item model-tone-${resolveProviderForModel(modelId) || meta.color || 'replicate'}`;
             if (!enabled) item.classList.add('is-disabled');
             item.dataset.value = modelId;
             item.setAttribute('role', 'option');
             item.innerHTML = `
-                <span class="${modelProviderBadgeClass(meta.color)}">${modelProviderBadgeText(meta)}</span>
+                <span class="${modelProviderBadgeClass(meta, modelId)}">${modelProviderBadgeText(meta, modelId)}</span>
                 <span class="model-dropdown-item-title">${meta.display_name || modelId}</span>
                 ${enabled ? '' : '<span class="model-dropdown-item-lock" title="Нужен API ключ"><i class="fas fa-lock"></i></span>'}
             `;
@@ -189,8 +214,8 @@ function updateModelDropdownSelected(modelId) {
     const badgeEl = document.getElementById('modelSelectedBadge');
     if (textEl) textEl.textContent = meta.display_name || modelId;
     if (badgeEl) {
-        badgeEl.className = modelProviderBadgeClass(meta.color);
-        badgeEl.textContent = modelProviderBadgeText(meta);
+        badgeEl.className = modelProviderBadgeClass(meta, modelId);
+        badgeEl.textContent = modelProviderBadgeText(meta, modelId);
     }
     document.querySelectorAll('#modelMenu .custom-dropdown-item').forEach((item) => {
         item.classList.toggle('selected', item.dataset.value === modelId);
@@ -224,7 +249,7 @@ function refreshModelSelectForCurrentKey() {
         }
     });
 
-    const current = select.value;
+    const current = equivalentModelForKeys(select.value);
     if (current && !modelHasRequiredKey(current) && firstEnabled) {
         selectModel(firstEnabled);
         showToast('Выбрана первая модель, для которой есть API ключ', 'info');
@@ -252,11 +277,11 @@ async function loadAvailableModels() {
             Object.assign(PROVIDER_COLORS, data.provider_colors);
         }
 
-        const savedModel = getSelectedModel();
+        const savedModel = equivalentModelForKeys(getSelectedModel());
         if (savedModel && availableModelsMeta[savedModel]) {
             selectModel(savedModel, { silent: true });
         } else if (data.default_model && availableModelsMeta[data.default_model]) {
-            selectModel(data.default_model, { silent: true });
+            selectModel(equivalentModelForKeys(data.default_model), { silent: true });
         }
 
         renderModelProviderLegend();
@@ -318,6 +343,7 @@ async function refreshUserKeyFlags() {
             bananalab: !!data.has_bananalab_key,
             openrouter: !!data.has_openrouter_key,
         };
+        updateRewritePromptUI();
     } catch (error) {
         console.warn('[API_KEY] Не удалось обновить статус ключей:', error);
     }
@@ -364,15 +390,22 @@ function updateParamsForModel() {
     if (hintEl) {
         const provider = resolveProviderForModel(modelSelect.value);
         if (provider === 'bananalab') {
-            hintEl.textContent = 'BananaHub: endpoint text/base64; выбор модели в UI может не влиять на backend.';
+            hintEl.textContent = 'BananaHub (nb_): выбранная модель идёт только через ваш nb_ ключ.';
         } else if (provider === 'openrouter') {
             hintEl.textContent = 'OpenRouter GPT: описание, соотношение сторон, референсы (до 16). Без resolution/steps/guidance.';
         } else if (isImagen) {
-            hintEl.textContent = 'Replicate Imagen: описание, соотношение сторон, seed. Референсы не поддерживаются.';
+            hintEl.textContent = 'Replicate (r8_): Imagen — описание, соотношение сторон, seed. Референсы не поддерживаются.';
         } else {
-            hintEl.textContent = 'Replicate: все параметры (разрешение, шаги, guidance, референсы и т.д.).';
+            hintEl.textContent = 'Replicate (r8_): все параметры (разрешение, шаги, guidance, референсы и т.д.).';
         }
     }
+    updateRewritePromptUI();
+}
+
+function updateRewritePromptUI() {
+    const group = document.getElementById('rewritePromptGroup');
+    if (!group) return;
+    group.style.display = hasProviderKey('openrouter') ? 'block' : 'none';
 }
 
 // Универсальные функции для работы с хранилищем (localStorage с fallback на sessionStorage)
@@ -1762,6 +1795,7 @@ async function checkApiKeyStatus() {
             statusDiv.innerHTML = '<span class="text-muted"><i class="fas fa-info-circle me-1"></i>Ключи на сервере не сохранены</span>';
         }
         refreshModelSelectForCurrentKey();
+        updateRewritePromptUI();
     } catch (e) {
         statusDiv.innerHTML = '<span class="text-warning"><i class="fas fa-exclamation-triangle me-1"></i>Не удалось проверить статус API ключа</span>';
     }
@@ -2128,6 +2162,7 @@ async function handleGenerate(e) {
             negative_prompt: document.getElementById('negativePrompt').value || null,
             generation_mode: document.querySelector('input[name="generationMode"]:checked').value,
             model_name: selectedModel, // Добавляем выбранную модель
+            rewrite_prompt: !!document.getElementById('rewritePrompt')?.checked,
             resolution: document.getElementById('resolution').value,
             num_inference_steps: parseInt(document.getElementById('numSteps').value),
             guidance_scale: parseFloat(document.getElementById('guidance').value),

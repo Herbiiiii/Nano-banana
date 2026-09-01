@@ -15,7 +15,16 @@ from app.services.image_models import get_model_entry, openrouter_slug
 logger = logging.getLogger(__name__)
 
 OPENROUTER_IMAGES_URL = "https://openrouter.ai/api/v1/images"
+OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_ALLOWED_ASPECTS = frozenset({"1:1", "3:2", "2:3", "auto"})
+
+PROMPT_REWRITE_SYSTEM = (
+    "You rewrite image generation prompts so they pass content safety filters "
+    "(Google Gemini, OpenAI, etc.) while preserving the user's creative intent. "
+    "Keep the same language as the input. Avoid explicit violence, sexual content, "
+    "real celebrity names, and copyrighted characters. Use safe artistic wording. "
+    "Output ONLY the rewritten prompt, without quotes or explanations."
+)
 
 
 def _map_aspect_ratio(aspect_ratio: str) -> str:
@@ -151,6 +160,49 @@ class OpenRouterService:
                 return {"success": False, "error": last_error, "retryable": True}
 
         return {"success": False, "error": last_error, "retryable": True}
+
+    def rewrite_prompt(self, prompt: str) -> Dict[str, Any]:
+        """Переформулирует промпт через текстовую модель OpenRouter."""
+        text = (prompt or "").strip()
+        if not text:
+            return {"success": False, "error": "Пустой промпт"}
+
+        rewrite_model = (settings.OPENROUTER_PROMPT_REWRITE_MODEL or "openai/gpt-4o-mini").strip()
+        payload = {
+            "model": rewrite_model,
+            "messages": [
+                {"role": "system", "content": PROMPT_REWRITE_SYSTEM},
+                {"role": "user", "content": f"Rewrite this image prompt:\n\n{text}"},
+            ],
+            "max_tokens": 600,
+            "temperature": 0.3,
+        }
+
+        try:
+            response = requests.post(
+                OPENROUTER_CHAT_URL,
+                headers=self._headers(),
+                json=payload,
+                timeout=60,
+            )
+            if response.status_code >= 400:
+                return {"success": False, "error": self._extract_error(response)}
+
+            body = response.json()
+            choices = body.get("choices") if isinstance(body, dict) else None
+            if not isinstance(choices, list) or not choices:
+                return {"success": False, "error": "OpenRouter не вернул переформулированный промпт"}
+
+            message = choices[0].get("message") if isinstance(choices[0], dict) else None
+            rewritten = (message or {}).get("content") if isinstance(message, dict) else None
+            rewritten = str(rewritten or "").strip().strip('"').strip("'")
+            if not rewritten:
+                return {"success": False, "error": "OpenRouter вернул пустой промпт"}
+
+            logger.info("[OPENROUTER] Промпт переформулирован model=%s", rewrite_model)
+            return {"success": True, "prompt": rewritten, "model": rewrite_model}
+        except requests.RequestException as exc:
+            return {"success": False, "error": f"OpenRouter: ошибка сети — {exc}"}
 
     @staticmethod
     def _extract_error(response: requests.Response) -> str:

@@ -7,33 +7,63 @@ from typing import Dict, List, Literal, Optional
 
 ImageApiProvider = Literal["replicate", "bananalab", "openrouter"]
 
-ProviderColor = Literal["bananalab", "replicate", "openrouter", "mixed"]
+ProviderColor = Literal["bananalab", "replicate", "openrouter"]
 
 MODEL_REGISTRY: Dict[str, dict] = {
     "nano-banana-2": {
         "display_name": "Nano Banana 2",
-        "description": "Новая модель: качество Pro и скорость Flash",
-        "providers": ["bananalab", "replicate"],
-        "provider_priority": ["bananalab", "replicate"],
-        "color": "mixed",
+        "description": "Новая модель: качество Pro и скорость Flash (BananaHub)",
+        "providers": ["bananalab"],
+        "provider_priority": ["bananalab"],
+        "color": "bananalab",
+        "group": "bananalab",
         "params_profile": "nano",
-        "replicate_slug": "google/nano-banana-2",
     },
     "nano-banana": {
         "display_name": "Nano Banana",
-        "description": "Google image editing model in Gemini 2.5",
-        "providers": ["bananalab", "replicate"],
-        "provider_priority": ["bananalab", "replicate"],
-        "color": "mixed",
+        "description": "Google image editing model in Gemini 2.5 (BananaHub)",
+        "providers": ["bananalab"],
+        "provider_priority": ["bananalab"],
+        "color": "bananalab",
+        "group": "bananalab",
         "params_profile": "nano",
-        "replicate_slug": "google/nano-banana",
     },
     "nano-banana-pro": {
         "display_name": "Nano Banana Pro",
-        "description": "State of the art image generation and editing (Pro)",
-        "providers": ["bananalab", "replicate"],
-        "provider_priority": ["bananalab", "replicate"],
-        "color": "mixed",
+        "description": "State of the art image generation and editing (BananaHub)",
+        "providers": ["bananalab"],
+        "provider_priority": ["bananalab"],
+        "color": "bananalab",
+        "group": "bananalab",
+        "params_profile": "nano",
+    },
+    "nano-banana-2-r8": {
+        "display_name": "Nano Banana 2",
+        "description": "Nano Banana 2 через Replicate",
+        "providers": ["replicate"],
+        "provider_priority": ["replicate"],
+        "color": "replicate",
+        "group": "replicate",
+        "params_profile": "nano",
+        "replicate_slug": "google/nano-banana-2",
+    },
+    "nano-banana-r8": {
+        "display_name": "Nano Banana",
+        "description": "Nano Banana через Replicate",
+        "providers": ["replicate"],
+        "provider_priority": ["replicate"],
+        "color": "replicate",
+        "group": "replicate",
+        "params_profile": "nano",
+        "replicate_slug": "google/nano-banana",
+    },
+    "nano-banana-pro-r8": {
+        "display_name": "Nano Banana Pro",
+        "description": "Nano Banana Pro через Replicate",
+        "providers": ["replicate"],
+        "provider_priority": ["replicate"],
+        "color": "replicate",
+        "group": "replicate",
         "params_profile": "nano",
         "replicate_slug": "google/nano-banana-pro",
     },
@@ -43,6 +73,7 @@ MODEL_REGISTRY: Dict[str, dict] = {
         "providers": ["replicate"],
         "provider_priority": ["replicate"],
         "color": "replicate",
+        "group": "replicate",
         "params_profile": "imagen",
         "replicate_slug": "google/gemini-2.5-flash-image",
     },
@@ -52,6 +83,7 @@ MODEL_REGISTRY: Dict[str, dict] = {
         "providers": ["replicate"],
         "provider_priority": ["replicate"],
         "color": "replicate",
+        "group": "replicate",
         "params_profile": "imagen",
         "replicate_slug": "google/imagen-4",
     },
@@ -61,6 +93,7 @@ MODEL_REGISTRY: Dict[str, dict] = {
         "providers": ["replicate"],
         "provider_priority": ["replicate"],
         "color": "replicate",
+        "group": "replicate",
         "params_profile": "imagen",
         "replicate_slug": "google/imagen-4-fast",
     },
@@ -70,24 +103,47 @@ MODEL_REGISTRY: Dict[str, dict] = {
         "providers": ["replicate"],
         "provider_priority": ["replicate"],
         "color": "replicate",
+        "group": "replicate",
         "params_profile": "imagen",
         "replicate_slug": "google/imagen-4-ultra",
     },
-    "gpt-5-image": {
-        "display_name": "GPT-5 Image",
-        "description": "OpenAI GPT-5 Image через OpenRouter",
+    "gpt-image-2": {
+        "display_name": "GPT Image 2",
+        "description": "Флагман OpenAI Image API — максимальное качество и редактирование",
         "providers": ["openrouter"],
         "provider_priority": ["openrouter"],
         "color": "openrouter",
+        "group": "openrouter",
+        "params_profile": "gpt_openrouter",
+        "openrouter_slug": "openai/gpt-image-2",
+    },
+    "gpt-image-1-mini": {
+        "display_name": "GPT Image 1 Mini",
+        "description": "Бюджетная dedicated Image API — быстро и дёшево",
+        "providers": ["openrouter"],
+        "provider_priority": ["openrouter"],
+        "color": "openrouter",
+        "group": "openrouter",
+        "params_profile": "gpt_openrouter",
+        "openrouter_slug": "openai/gpt-image-1-mini",
+    },
+    "gpt-5-image": {
+        "display_name": "GPT-5 Image",
+        "description": "GPT-5 через LLM-маршрут OpenRouter (prompt + референсы)",
+        "providers": ["openrouter"],
+        "provider_priority": ["openrouter"],
+        "color": "openrouter",
+        "group": "openrouter",
         "params_profile": "gpt_openrouter",
         "openrouter_slug": "openai/gpt-5-image",
     },
     "gpt-5-image-mini": {
         "display_name": "GPT-5 Image Mini",
-        "description": "OpenAI GPT-5 Image Mini через OpenRouter",
+        "description": "Облегчённый GPT-5 Image через OpenRouter",
         "providers": ["openrouter"],
         "provider_priority": ["openrouter"],
         "color": "openrouter",
+        "group": "openrouter",
         "params_profile": "gpt_openrouter",
         "openrouter_slug": "openai/gpt-5-image-mini",
     },
@@ -105,7 +161,6 @@ PROVIDER_GROUP_LABELS = {
     "bananalab": "BananaHub (nb_)",
     "replicate": "Replicate (r8_)",
     "openrouter": "OpenRouter GPT (sk-or_)",
-    "mixed": "Nano Banana (nb_ или r8_)",
 }
 
 
@@ -174,6 +229,18 @@ def replicate_slug(model_id: Optional[str]) -> Optional[str]:
     if not entry:
         return model_id
     return entry.get("replicate_slug") or model_id
+
+
+def replicate_params_key(model_id: Optional[str]) -> str:
+    """Ключ для профиля параметров Replicate (nano-banana-pro-r8 → nano-banana-pro)."""
+    if not model_id:
+        return DEFAULT_MODEL_ID
+    mid = model_id.strip().lower()
+    if mid.endswith("-r8"):
+        base = mid[:-3]
+        if base in MODEL_REGISTRY:
+            return base
+    return mid
 
 
 def is_bananalab_frontend_model(model_id: Optional[str]) -> bool:

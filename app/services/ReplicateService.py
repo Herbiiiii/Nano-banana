@@ -13,6 +13,7 @@ from replicate.exceptions import ModelError, ReplicateError
 import re
 
 from app.services.generation_prompt import enhance_prompt_for_image_generation
+from app.services.image_models import replicate_slug, replicate_params_key
 
 logger = logging.getLogger(__name__)
 
@@ -214,23 +215,33 @@ class ReplicateService:
             }
         """
         try:
+            current_model_key = None
             # Определяем модель для использования
-            if model_name and model_name in self.AVAILABLE_MODELS:
+            slug = replicate_slug(model_name)
+            if slug:
+                selected_model = slug
+                current_model_key = replicate_params_key(model_name)
+                logger.info(f"[REPLICATE] Используется модель: {model_name} ({selected_model})")
+            elif model_name and model_name in self.AVAILABLE_MODELS:
                 selected_model = self.AVAILABLE_MODELS[model_name]["name"]
+                current_model_key = model_name
                 logger.info(f"[REPLICATE] Используется модель: {model_name} ({selected_model})")
             elif model_name:
                 # Если указана модель, которой нет в списке, пробуем использовать как есть (для кастомных моделей)
                 selected_model = model_name
+                current_model_key = model_name
                 logger.warning(f"[REPLICATE] Модель '{model_name}' не найдена в списке доступных, используется как есть")
             else:
                 selected_model = self.AVAILABLE_MODELS[self.DEFAULT_MODEL]["name"]
+                current_model_key = self.DEFAULT_MODEL
                 logger.info(f"[REPLICATE] Используется модель по умолчанию: {self.DEFAULT_MODEL} ({selected_model})")
             
             logger.info(f"[REPLICATE] Начало генерации. Промпт: {prompt[:100]}...")
             logger.info(f"[REPLICATE] Параметры: resolution={resolution}, aspect_ratio={aspect_ratio}, model={selected_model}")
             
             # Определяем, какая модель используется (для адаптации параметров)
-            current_model_key = model_name if model_name and model_name in self.AVAILABLE_MODELS else self.DEFAULT_MODEL
+            if not current_model_key:
+                current_model_key = model_name if model_name and model_name in self.AVAILABLE_MODELS else self.DEFAULT_MODEL
             
             # Подготовка параметров в зависимости от модели (без автоподмены)
             input_params = {"prompt": prompt}

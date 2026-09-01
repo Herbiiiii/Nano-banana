@@ -154,6 +154,43 @@ def _extract_cloudflare_error_code(text: str) -> Optional[str]:
     return None
 
 
+CONTENT_POLICY_MARKERS = (
+    "safety",
+    "moderation",
+    "content policy",
+    "content filter",
+    "blocked",
+    "reject",
+    "nsfw",
+    "responsible ai",
+    "policy violation",
+    "inappropriate",
+    "harmful content",
+    "prohibited",
+    "not allowed",
+    "cannot generate",
+    "can't generate",
+    "unable to generate",
+    "couldn't process",
+    "refused to",
+    "violat",
+    "sensitive content",
+    "rai filter",
+    "image_generation_user_error",
+    "no image was generated",
+)
+
+CONTENT_POLICY_USER_MESSAGE = (
+    "Запрос не прошёл фильтр безопасности Google/OpenAI. "
+    "Переформулируйте описание мягче или попробуйте другой API-ключ/провайдер (nb_ / r8_ / sk-or_)."
+)
+
+
+def is_content_policy_error(message: str) -> bool:
+    lower = (message or "").lower()
+    return any(marker in lower for marker in CONTENT_POLICY_MARKERS)
+
+
 def humanize_api_error(message: Any, http_status: Optional[int] = None) -> str:
     """Короткое сообщение для UI вместо HTML-страниц Cloudflare и прочего шума."""
     if message is None:
@@ -190,6 +227,10 @@ def humanize_api_error(message: Any, http_status: Optional[int] = None) -> str:
 
     if is_bananalab_upstream_no_image_message(text):
         return BANANALAB_UPSTREAM_NO_IMAGE_RETRY_MESSAGE
+
+    if is_content_policy_error(text):
+        detail = text if len(text) < 180 else text[:180] + "…"
+        return f"{CONTENT_POLICY_USER_MESSAGE} ({detail})"
 
     status_key = str(http_status) if http_status else None
     if status_key in _CLOUDFLARE_GATEWAY_MESSAGES and http_status and http_status >= 500:

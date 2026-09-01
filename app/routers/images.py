@@ -440,10 +440,37 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                 logger.info(
                     f"[GENERATION] Провайдер {provider_label_text}, модель {model_name}, генерация {generation_id}"
                 )
+
+                prompt_for_generation = request_data.get("prompt") or ""
+                if request_data.get("rewrite_prompt"):
+                    openrouter_key = keys.get("openrouter")
+                    if openrouter_key:
+                        rewrite_result = OpenRouterService(api_key=openrouter_key).rewrite_prompt(prompt_for_generation)
+                        if rewrite_result.get("success") and rewrite_result.get("prompt"):
+                            if not generation.generation_metadata:
+                                generation.generation_metadata = {}
+                            generation.generation_metadata["original_prompt"] = prompt_for_generation
+                            generation.generation_metadata["rewritten_prompt"] = rewrite_result["prompt"]
+                            generation.generation_metadata["rewrite_model"] = rewrite_result.get("model")
+                            from sqlalchemy.orm.attributes import flag_modified
+                            flag_modified(generation, "generation_metadata")
+                            session.commit()
+                            prompt_for_generation = rewrite_result["prompt"]
+                            logger.info("[GENERATION] Промпт переформулирован для генерации %s", generation_id)
+                        else:
+                            logger.warning(
+                                "[GENERATION] Не удалось переформулировать промпт для %s: %s",
+                                generation_id,
+                                rewrite_result.get("error"),
+                            )
+                    else:
+                        logger.warning(
+                            "[GENERATION] rewrite_prompt=true, но ключ OpenRouter (sk-or_) не сохранён"
+                        )
                 
                 # Генерируем изображение
                 result = generation_service.generate_image(
-                    prompt=request_data['prompt'],
+                    prompt=prompt_for_generation,
                     negative_prompt=request_data.get('negative_prompt'),
                     resolution=request_data.get('resolution', '1K'),
                     aspect_ratio=request_data.get('aspect_ratio', '1:1'),
@@ -1060,7 +1087,7 @@ async def get_available_models(
             "providers": entry.get("providers", []),
             "color": entry.get("color", "replicate"),
             "params_profile": entry.get("params_profile", "nano"),
-            "group": entry.get("color", "replicate"),
+            "group": entry.get("group") or entry.get("color", "replicate"),
         }
     return {
         "models": models,
@@ -1072,7 +1099,6 @@ async def get_available_models(
             "bananalab": "#f59e0b",
             "replicate": "#3b82f6",
             "openrouter": "#10b981",
-            "mixed": "#a855f7",
         },
     }
 
