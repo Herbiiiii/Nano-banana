@@ -42,6 +42,33 @@ class TestImageModels(unittest.TestCase):
         self.assertIsNone(get_provider_for_model("nano-banana-pro-r8", {"replicate": "", "bananalab": "nb_x", "openrouter": ""}))
 
 
+class TestPromptSanitize(unittest.TestCase):
+    def test_batman_ru(self):
+        from app.services.prompt_sanitize import sanitize_prompt
+
+        result = sanitize_prompt("Фото бетмена")
+        self.assertTrue(result["changed"])
+        self.assertNotIn("бетмен", result["prompt"].lower())
+        self.assertIn("плащ", result["prompt"].lower())
+
+    def test_messi_ronaldo_ru(self):
+        from app.services.prompt_sanitize import sanitize_prompt
+
+        result = sanitize_prompt("Леонель Месси пинает под зад Роналду")
+        self.assertTrue(result["changed"])
+        self.assertNotIn("месси", result["prompt"].lower())
+        self.assertNotIn("роналду", result["prompt"].lower())
+        self.assertNotIn("под зад", result["prompt"].lower())
+
+    def test_plain_prompt_unchanged(self):
+        from app.services.prompt_sanitize import sanitize_prompt
+
+        text = "закат над морем, масло"
+        result = sanitize_prompt(text)
+        self.assertFalse(result["changed"])
+        self.assertEqual(result["prompt"], text)
+
+
 class TestPrompt(unittest.TestCase):
     def test_text_to_image_prefix(self):
         p = enhance_prompt_for_image_generation("red apple", None, 0)

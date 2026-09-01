@@ -87,6 +87,8 @@ class ImageResponse(BaseModel):
     fallback_model: Optional[str] = None  # Рекомендуемая fallback-модель для быстрого перезапуска
     provider: Optional[str] = None
     original_prompt: Optional[str] = None
+    sanitized_prompt: Optional[str] = None
+    sanitize_replacements: Optional[List[str]] = None
     rewritten_prompt: Optional[str] = None
     rewrite_model: Optional[str] = None
     rewrite_error: Optional[str] = None

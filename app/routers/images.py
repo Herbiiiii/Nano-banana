@@ -16,6 +16,7 @@ from app.services.CryptoService import CryptoService
 from app.models.schemas import ImageGenerationRequest, ImageGenerationResponse, ImageResponse
 from app.services.ReplicateService import ReplicateService
 from app.services.BananalabService import BananalabService, SUPPORTED_BANANALAB_FRONTEND_MODELS
+from app.services.prompt_sanitize import sanitize_prompt
 from app.services.OpenRouterService import OpenRouterService
 from app.services.image_api_provider import infer_image_api_provider
 from app.services.image_models import (
@@ -88,6 +89,8 @@ def _rewrite_metadata_fields(metadata: Optional[dict]) -> dict:
     return {
         "provider": meta.get("provider"),
         "original_prompt": meta.get("original_prompt"),
+        "sanitized_prompt": meta.get("sanitized_prompt"),
+        "sanitize_replacements": meta.get("sanitize_replacements"),
         "rewritten_prompt": meta.get("rewritten_prompt"),
         "rewrite_model": meta.get("rewrite_model"),
         "rewrite_error": meta.get("rewrite_error"),
@@ -110,41 +113,63 @@ def _apply_prompt_rewrite(
     generation.generation_metadata["rewrite_requested"] = True
     from sqlalchemy.orm.attributes import flag_modified
 
+    original = prompt_for_generation
+    generation.generation_metadata["original_prompt"] = original
+
+    # Шаг 1: локальная очистка триггеров (без API, всегда)
+    sanitized = sanitize_prompt(original)
+    working_prompt = sanitized["prompt"]
+    if sanitized["changed"]:
+        generation.generation_metadata["sanitized_prompt"] = working_prompt
+        generation.generation_metadata["sanitize_replacements"] = sanitized["replacements"]
+        logger.info(
+            "[GENERATION] sanitize gen=%s | ORIGINAL: %s | SANITIZED: %s | rules=%s",
+            generation_id,
+            original[:200],
+            working_prompt[:200],
+            sanitized["replacements"],
+        )
+    flag_modified(generation, "generation_metadata")
+    session.commit()
+
+    # Шаг 2: GPT-полировка через OpenRouter (опционально, если есть sk-or_)
     openrouter_key = keys.get("openrouter")
     if not openrouter_key:
-        err = "Галочка переформулировки включена, но ключ OpenRouter (sk-or_) не сохранён"
-        generation.generation_metadata["rewrite_error"] = err
+        generation.generation_metadata["rewrite_note"] = (
+            "Локальная очистка применена. GPT-полировка пропущена — нет ключа sk-or_."
+        )
         flag_modified(generation, "generation_metadata")
         session.commit()
-        logger.warning("[GENERATION] %s (gen=%s)", err, generation_id)
-        return prompt_for_generation
+        return working_prompt
 
-    rewrite_result = OpenRouterService(api_key=openrouter_key).rewrite_prompt(prompt_for_generation)
+    rewrite_result = OpenRouterService(api_key=openrouter_key).rewrite_prompt(working_prompt)
     if rewrite_result.get("success") and rewrite_result.get("prompt"):
-        original = rewrite_result.get("original") or prompt_for_generation
         rewritten = rewrite_result["prompt"]
-        generation.generation_metadata["original_prompt"] = original
         generation.generation_metadata["rewritten_prompt"] = rewritten
         generation.generation_metadata["rewrite_model"] = rewrite_result.get("model")
         generation.generation_metadata.pop("rewrite_error", None)
+        generation.generation_metadata.pop("rewrite_note", None)
         flag_modified(generation, "generation_metadata")
         session.commit()
         logger.info(
-            "[GENERATION] rewrite OK gen=%s model=%s | ORIGINAL: %s | REWRITTEN: %s",
+            "[GENERATION] rewrite OK gen=%s model=%s | SANITIZED: %s | REWRITTEN: %s",
             generation_id,
             rewrite_result.get("model"),
-            original[:300],
-            rewritten[:300],
+            working_prompt[:200],
+            rewritten[:200],
         )
         return rewritten
 
-    err = rewrite_result.get("error") or "Не удалось переформулировать промпт"
+    err = rewrite_result.get("error") or "GPT-полировка не удалась"
     err = humanize_api_error(err, provider="openrouter")
     generation.generation_metadata["rewrite_error"] = err
+    generation.generation_metadata["rewrite_note"] = (
+        "GPT-полировка не прошла, для генерации использован локально очищенный промпт."
+    )
     flag_modified(generation, "generation_metadata")
     session.commit()
-    logger.warning("[GENERATION] rewrite FAIL gen=%s: %s", generation_id, err)
-    return prompt_for_generation
+    logger.warning("[GENERATION] rewrite FAIL gen=%s, using sanitized prompt: %s", generation_id, err)
+    return working_prompt
 
 
 def _is_paused_error(error_message: str) -> bool:
