@@ -406,6 +406,7 @@ function updateRewritePromptUI() {
     const group = document.getElementById('rewritePromptGroup');
     if (!group) return;
     group.style.display = hasProviderKey('openrouter') ? 'block' : 'none';
+    restoreRewritePromptCheckbox();
 }
 
 function providerBadgeLabel(provider) {
@@ -561,6 +562,34 @@ function setSelectedModel(modelName) {
         console.error('[STORAGE] Ошибка сохранения модели:', e);
         return false;
     }
+}
+
+function getRewritePromptEnabled() {
+    const storage = getStorage();
+    if (!storage) return false;
+    try {
+        return storage.getItem('rewritePrompt') === '1';
+    } catch (e) {
+        return false;
+    }
+}
+
+function setRewritePromptEnabled(enabled) {
+    const storage = getStorage();
+    if (!storage) return false;
+    try {
+        storage.setItem('rewritePrompt', enabled ? '1' : '0');
+        return true;
+    } catch (e) {
+        console.error('[STORAGE] Ошибка сохранения rewritePrompt:', e);
+        return false;
+    }
+}
+
+function restoreRewritePromptCheckbox() {
+    const checkbox = document.getElementById('rewritePrompt');
+    if (!checkbox) return;
+    checkbox.checked = getRewritePromptEnabled();
 }
 
 // Обработка файла референса (используется и для загрузки, и для paste)
@@ -1642,6 +1671,13 @@ document.addEventListener('DOMContentLoaded', () => {
     updateParamsForModel();
     renderModelProviderLegend();
     refreshModelSelectForCurrentKey();
+    restoreRewritePromptCheckbox();
+    const rewriteCheckbox = document.getElementById('rewritePrompt');
+    if (rewriteCheckbox) {
+        rewriteCheckbox.addEventListener('change', (e) => {
+            setRewritePromptEnabled(!!e.target.checked);
+        });
+    }
     loadProviderStatus();
     
     // Обновление галереи каждые 5 секунд (только если есть активные генерации)
@@ -2220,12 +2256,15 @@ async function handleGenerate(e) {
         // Сохраняем выбранную модель
         setSelectedModel(selectedModel);
         
+        const rewriteEnabled = !!document.getElementById('rewritePrompt')?.checked;
+        setRewritePromptEnabled(rewriteEnabled);
+
         const formData = {
             prompt: document.getElementById('prompt').value,
             negative_prompt: document.getElementById('negativePrompt').value || null,
             generation_mode: document.querySelector('input[name="generationMode"]:checked').value,
             model_name: selectedModel, // Добавляем выбранную модель
-            rewrite_prompt: !!document.getElementById('rewritePrompt')?.checked,
+            rewrite_prompt: rewriteEnabled,
             resolution: document.getElementById('resolution').value,
             num_inference_steps: parseInt(document.getElementById('numSteps').value),
             guidance_scale: parseFloat(document.getElementById('guidance').value),

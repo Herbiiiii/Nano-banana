@@ -183,9 +183,35 @@ CONTENT_POLICY_MARKERS = (
 )
 
 CONTENT_POLICY_USER_MESSAGE = (
-    "Запрос не прошёл фильтр безопасности Google/OpenAI. "
-    "Переформулируйте описание мягче или попробуйте другой API-ключ/провайдер (nb_ / r8_ / sk-or_)."
+    "Запрос не прошёл фильтр безопасности. "
+    "Переформулируйте описание мягче или попробуйте другой провайдер (nb_ / r8_ / sk-or_)."
 )
+
+OPENROUTER_SECURITY_MESSAGE = (
+    "OpenRouter отклонил запрос (политика безопасности шлюза, не Google/BananaHub). "
+    "Уберите имена персонажей и брендов (Batman, Messi и т.д.), опишите сцену абстрактно "
+    "или попробуйте nb_ / r8_."
+)
+
+PROVIDER_POLICY_MESSAGES = {
+    "bananalab": (
+        "Google через BananaHub не принял запрос (фильтр контента). "
+        "Переформулируйте описание мягче или попробуйте r8_ / sk-or_."
+    ),
+    "openrouter": (
+        "OpenRouter/OpenAI не сгенерировали изображение (фильтр контента модели). "
+        "Переформулируйте описание или попробуйте nb_ / r8_."
+    ),
+    "replicate": (
+        "Replicate/Google отклонили запрос (фильтр контента). "
+        "Переформулируйте описание или попробуйте nb_ / sk-or_."
+    ),
+}
+
+
+def is_openrouter_security_policy(message: str) -> bool:
+    lower = (message or "").lower()
+    return "security policy" in lower
 
 
 def is_content_policy_error(message: str) -> bool:
@@ -193,7 +219,11 @@ def is_content_policy_error(message: str) -> bool:
     return any(marker in lower for marker in CONTENT_POLICY_MARKERS)
 
 
-def humanize_api_error(message: Any, http_status: Optional[int] = None) -> str:
+def humanize_api_error(
+    message: Any,
+    http_status: Optional[int] = None,
+    provider: Optional[str] = None,
+) -> str:
     """Короткое сообщение для UI вместо HTML-страниц Cloudflare и прочего шума."""
     if message is None:
         text = ""
@@ -230,7 +260,13 @@ def humanize_api_error(message: Any, http_status: Optional[int] = None) -> str:
     if is_bananalab_upstream_no_image_message(text):
         return BANANALAB_UPSTREAM_NO_IMAGE_RETRY_MESSAGE
 
+    if is_openrouter_security_policy(text):
+        return OPENROUTER_SECURITY_MESSAGE
+
     if is_content_policy_error(text):
+        policy_msg = PROVIDER_POLICY_MESSAGES.get(provider or "", CONTENT_POLICY_USER_MESSAGE)
+        if provider and provider in PROVIDER_POLICY_MESSAGES:
+            return policy_msg
         detail = text if len(text) < 180 else text[:180] + "…"
         return f"{CONTENT_POLICY_USER_MESSAGE} ({detail})"
 

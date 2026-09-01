@@ -3,7 +3,7 @@ import unittest
 
 from app.services.generation_prompt import enhance_prompt_for_image_generation
 from app.services.image_api_provider import infer_image_api_provider
-from app.services.bananalab_response import detail_from_response_body, find_image_in_json, humanize_api_error, is_content_policy_error
+from app.services.bananalab_response import detail_from_response_body, find_image_in_json, humanize_api_error, is_content_policy_error, is_openrouter_security_policy
 
 
 class TestProvider(unittest.TestCase):
@@ -215,9 +215,11 @@ class TestHumanizeApiError(unittest.TestCase):
 
     def test_openrouter_security_policy(self):
         raw = "OpenRouter: Access denied by security policy."
-        self.assertTrue(is_content_policy_error(raw))
-        msg = humanize_api_error(raw)
-        self.assertIn("фильтр безопасности", msg.lower())
+        self.assertTrue(is_openrouter_security_policy(raw))
+        msg = humanize_api_error(raw, provider="openrouter")
+        self.assertIn("openrouter", msg.lower())
+        self.assertNotIn("google/openai", msg.lower())
+        self.assertNotIn("google/openai", msg.lower().replace(" ", ""))
 
     def test_nested_detail_message(self):
         msg = humanize_api_error(

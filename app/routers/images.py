@@ -139,6 +139,7 @@ def _apply_prompt_rewrite(
         return rewritten
 
     err = rewrite_result.get("error") or "Не удалось переформулировать промпт"
+    err = humanize_api_error(err, provider="openrouter")
     generation.generation_metadata["rewrite_error"] = err
     flag_modified(generation, "generation_metadata")
     session.commit()
@@ -536,8 +537,10 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                 elif hasattr(gen_error, 'args') and len(gen_error.args) > 0:
                     error_msg = str(gen_error.args[0])
                 
-                full_error_msg = humanize_api_error(error_msg)
-                if not full_error_msg.startswith(("Banana Lab", "Ошибка провайдера", "Сервис Banana")):
+                full_error_msg = humanize_api_error(error_msg, provider=provider)
+                if not full_error_msg.startswith(
+                    ("Banana Lab", "BananaHub", "OpenRouter", "Google", "Replicate", "Ошибка провайдера", "Сервис Banana", "Запрос не прошёл")
+                ):
                     full_error_msg = f"Ошибка генерации ({provider_label_text}): {full_error_msg}"
                 
                 logger.error(f"[GENERATION] {full_error_msg}", exc_info=True)
@@ -607,7 +610,7 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                 if not isinstance(error_message, str):
                     error_message = str(error_message)
 
-                error_message = humanize_api_error(error_message)
+                error_message = humanize_api_error(error_message, provider=provider)
                 if result.get("unavailable") or _is_unavailable_error(error_message):
                     generation.status = "failed"
                     generation.completed_at = datetime.utcnow()
@@ -775,7 +778,9 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                 if not generation.generation_metadata:
                     generation.generation_metadata = {}
                 generation.generation_metadata.pop("paused_request_data", None)
-                generation.generation_metadata['error'] = humanize_api_error(str(e))
+                meta = generation.generation_metadata or {}
+                prov = meta.get("provider")
+                generation.generation_metadata['error'] = humanize_api_error(str(e), provider=prov)
                 # ВАЖНО: Уведомляем SQLAlchemy об изменении JSON поля
                 from sqlalchemy.orm.attributes import flag_modified
                 flag_modified(generation, "generation_metadata")
