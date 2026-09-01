@@ -272,6 +272,8 @@ class OpenRouterService:
                     return f"OpenRouter: {msg}"
             if isinstance(err, str) and err.strip():
                 return f"OpenRouter: {err.strip()}"
+            if body.get("success") is False and isinstance(body.get("error"), str):
+                return f"OpenRouter: {body['error'].strip()}"
             detail = body.get("detail") or body.get("message")
             if detail:
                 return f"OpenRouter: {detail}"

@@ -246,8 +246,9 @@ class TestHumanizeApiError(unittest.TestCase):
         self.assertTrue(is_policy_block_error(raw))
         msg = humanize_api_error(raw, provider="openrouter")
         self.assertIn("openrouter", msg.lower())
-        self.assertNotIn("google/openai", msg.lower())
-        self.assertNotIn("google/openai", msg.lower().replace(" ", ""))
+        self.assertIn("ключ", msg.lower())
+        humanized = humanize_api_error(raw, provider="openrouter")
+        self.assertTrue(is_policy_block_error(humanized))
 
     def test_nested_detail_message(self):
         msg = humanize_api_error(

@@ -564,6 +564,7 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                 max_policy_gpt = settings.MAX_POLICY_GPT_RETRIES if rewrite_requested else 0
                 policy_gpt_used = 0
                 result = None
+                last_raw_error = ""
 
                 while True:
                     try:
@@ -613,7 +614,9 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                         error_message = 'Неизвестная ошибка генерации'
                     if not isinstance(error_message, str):
                         error_message = str(error_message)
-                    error_message = humanize_api_error(error_message, provider=provider)
+                    raw_error_message = error_message
+                    last_raw_error = raw_error_message
+                    error_message = humanize_api_error(raw_error_message, provider=provider)
 
                     if result.get("unavailable") or _is_unavailable_error(error_message):
                         break
@@ -622,7 +625,7 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
 
                     if (
                         rewrite_requested
-                        and is_policy_block_error(error_message)
+                        and is_policy_block_error(raw_error_message)
                         and policy_gpt_used < max_policy_gpt
                     ):
                         if not keys.get("openrouter"):
@@ -777,7 +780,11 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                 # Приоритет у явного флага из ReplicateService, чтобы ретраи не зависели от текста user-friendly сообщения.
                 lower_err = error_message.lower()
                 service_retryable = bool(result.get("retryable"))
-                upstream_no_image = is_bananalab_upstream_no_image_message(error_message)
+                policy_block = is_policy_block_error(last_raw_error) or is_policy_block_error(error_message)
+                upstream_no_image = (
+                    not policy_block
+                    and is_bananalab_upstream_no_image_message(last_raw_error or error_message)
+                )
                 is_retryable = service_retryable or upstream_no_image or (
                     "e003" in lower_err
                     or "high demand" in lower_err

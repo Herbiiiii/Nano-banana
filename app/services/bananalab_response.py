@@ -187,11 +187,14 @@ CONTENT_POLICY_USER_MESSAGE = (
     "Переформулируйте описание мягче или попробуйте другой провайдер (nb_ / r8_ / sk-or_)."
 )
 
-OPENROUTER_SECURITY_MESSAGE = (
-    "OpenRouter отклонил запрос (политика безопасности шлюза, не Google/BananaHub). "
-    "Уберите имена персонажей и брендов (Batman, Messi и т.д.), опишите сцену абстрактно "
-    "или попробуйте nb_ / r8_."
+OPENROUTER_ACCOUNT_GUARD_MESSAGE = (
+    "OpenRouter заблокировал API-ключ (security policy на шлюзе OpenRouter). "
+    "Это не фильтр вашего промпта — проверьте баланс, guardrails и статус ключа на openrouter.ai/keys "
+    "или создайте новый sk-or_ ключ."
 )
+
+# Устаревший alias — оставлен для совместимости тестов/логов
+OPENROUTER_SECURITY_MESSAGE = OPENROUTER_ACCOUNT_GUARD_MESSAGE
 
 PROVIDER_POLICY_MESSAGES = {
     "bananalab": (
@@ -211,12 +214,38 @@ PROVIDER_POLICY_MESSAGES = {
 
 def is_openrouter_security_policy(message: str) -> bool:
     lower = (message or "").lower()
-    return "security policy" in lower
+    return (
+        "security policy" in lower
+        or "access denied by security policy" in lower
+        or "политика безопасности шлюза" in lower
+        or lower.strip() == OPENROUTER_ACCOUNT_GUARD_MESSAGE.lower()
+    )
 
 
 def is_policy_block_error(message: str) -> bool:
     """Блокировка контент-фильтром (OpenRouter шлюз, Google, OpenAI и т.д.)."""
-    return is_openrouter_security_policy(message) or is_content_policy_error(message)
+    if is_openrouter_security_policy(message):
+        return True
+    if is_content_policy_error(message):
+        return True
+    lower = (message or "").lower()
+    return any(
+        marker in lower
+        for marker in (
+            "фильтр контента",
+            "контент-фильтр",
+            "фильтр безопасности",
+            "фильтр безопасности google",
+            "не прошёл фильтр",
+            "не прошел фильтр",
+            "content filter",
+            "content policy",
+            "image_content_policy",
+            "content_policy_violation",
+            "policy violation",
+            "responsible ai",
+        )
+    )
 
 
 def is_content_policy_error(message: str) -> bool:
@@ -266,7 +295,11 @@ def humanize_api_error(
         return BANANALAB_UPSTREAM_NO_IMAGE_RETRY_MESSAGE
 
     if is_openrouter_security_policy(text):
-        return OPENROUTER_SECURITY_MESSAGE
+        if provider == "openrouter":
+            return OPENROUTER_ACCOUNT_GUARD_MESSAGE
+        if provider and provider in PROVIDER_POLICY_MESSAGES:
+            return PROVIDER_POLICY_MESSAGES[provider]
+        return CONTENT_POLICY_USER_MESSAGE
 
     if is_content_policy_error(text):
         policy_msg = PROVIDER_POLICY_MESSAGES.get(provider or "", CONTENT_POLICY_USER_MESSAGE)
