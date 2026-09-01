@@ -1,5 +1,5 @@
 """
-Роутер для генерации изображений: Replicate или Banana Lab (по префиксу API ключа).
+Роутер для генерации изображений: Replicate, Banana Lab или OpenRouter (по ключу модели).
 """
 from concurrent.futures import ThreadPoolExecutor
 from collections import deque
@@ -16,7 +16,15 @@ from app.services.CryptoService import CryptoService
 from app.models.schemas import ImageGenerationRequest, ImageGenerationResponse, ImageResponse
 from app.services.ReplicateService import ReplicateService
 from app.services.BananalabService import BananalabService, SUPPORTED_BANANALAB_FRONTEND_MODELS
+from app.services.OpenRouterService import OpenRouterService
 from app.services.image_api_provider import infer_image_api_provider
+from app.services.image_models import (
+    DEFAULT_MODEL_ID,
+    MODEL_REGISTRY,
+    get_provider_for_model,
+    provider_label,
+    select_api_key_for_model,
+)
 from app.services.MinioService import MinioService
 from app.services.DBService import db_service
 from app.services.AuthService import auth_service
@@ -26,10 +34,13 @@ from app.models.token import TokenPayload
 from app.security_helpers import generate_storage_object_name, is_allowed_reference_url
 from app.services.result_storage import persist_generation_result
 from app.services.bananalab_response import (
+    BANANALAB_UPSTREAM_NO_IMAGE_EXHAUSTED_MESSAGE,
+    BANANALAB_UPSTREAM_NO_IMAGE_RETRY_MESSAGE,
     humanize_api_error,
     is_bananalab_paused_message,
     is_bananalab_unavailable_message,
     is_bananalab_upstream_no_image_message,
+    upstream_no_image_retry_delay_seconds,
 )
 
 logger = logging.getLogger(__name__)
@@ -39,9 +50,6 @@ executor = ThreadPoolExecutor(max_workers=settings.MAX_WORKERS)
 
 # Максимальное количество повторных попыток генерации при временных ошибках (E003 / 429)
 MAX_GENERATION_RETRIES = 5
-# Flaky upstream BananaHub: «Upstream returned no image» часто проходит со 2–3 попытки
-BANANALAB_UPSTREAM_NO_IMAGE_MAX_RETRIES = 3
-BANANALAB_UPSTREAM_NO_IMAGE_RETRY_DELAY_SECONDS = 3
 PAUSED_RETRY_DELAY_SECONDS = 30
 
 router = APIRouter(prefix="/images", tags=["images"])
@@ -327,7 +335,8 @@ def get_user_generation_api_key(user_id: int, api_key_from_request: Optional[str
         return decrypted_key
 
     raise ValueError(
-        "API ключ не указан. Введите ключ Replicate (r8_…) или Banana Lab (nb_…) в настройках."
+        "API ключ не указан. Введите ключ Replicate (r8_…), Banana Lab (nb_…) "
+        "или OpenRouter (sk-or_…) в настройках."
     )
 
 
@@ -337,42 +346,29 @@ def _load_user_api_keys(user_id: int) -> Dict[str, str]:
         encrypted_key = db_user.replicate_api_key if db_user else None
     decrypted = CryptoService.decrypt(encrypted_key) if encrypted_key else None
     if not decrypted:
-        return {"replicate": "", "bananalab": ""}
+        return {"replicate": "", "bananalab": "", "openrouter": ""}
     try:
         parsed = json.loads(decrypted)
         if isinstance(parsed, dict):
             return {
                 "replicate": str(parsed.get("replicate") or "").strip(),
                 "bananalab": str(parsed.get("bananalab") or "").strip(),
+                "openrouter": str(parsed.get("openrouter") or "").strip(),
             }
     except Exception:
         pass
-    # Legacy-формат: в поле сохранен один ключ строкой.
     key = str(decrypted).strip()
     if not key:
-        return {"replicate": "", "bananalab": ""}
-    if infer_image_api_provider(key) == "bananalab":
-        return {"replicate": "", "bananalab": key}
-    return {"replicate": key, "bananalab": ""}
+        return {"replicate": "", "bananalab": "", "openrouter": ""}
+    provider = infer_image_api_provider(key)
+    keys = {"replicate": "", "bananalab": "", "openrouter": ""}
+    keys[provider] = key
+    return keys
 
 
 def _select_api_key_for_model(user_id: int, model_name: Optional[str], api_key_from_request: Optional[str] = None) -> str:
-    if api_key_from_request and str(api_key_from_request).strip():
-        return str(api_key_from_request).strip()
-
     keys = _load_user_api_keys(user_id)
-    replicate_key = keys.get("replicate") or ""
-    bananalab_key = keys.get("bananalab") or ""
-    model = (model_name or "").strip().lower()
-
-    # Приоритет BananaLab, но если модель там недоступна — fallback в Replicate.
-    if bananalab_key and (not model or model in SUPPORTED_BANANALAB_FRONTEND_MODELS):
-        return bananalab_key
-    if replicate_key:
-        return replicate_key
-    if bananalab_key:
-        return bananalab_key
-    raise ValueError("API ключи не найдены. Сохраните ключи Banana Lab и/или Replicate в настройках.")
+    return select_api_key_for_model(model_name, keys, api_key_from_request)
 
 def process_generation_async(generation_id: int, user_id: int, request_data: dict):
     """Асинхронная обработка генерации"""
@@ -394,17 +390,20 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                 api_key_from_request = _decrypt_api_key_for_resume(request_data.get("api_key_encrypted"))
             logger.info(f"[GENERATION] В process_generation_async: ключ из запроса: {'передан' if api_key_from_request else 'не передан'}")
             api_key = _select_api_key_for_model(user_id, request_data.get("model_name"), api_key_from_request)
-            provider = infer_image_api_provider(api_key)
-            provider_label = "Banana Lab" if provider == "bananalab" else "Replicate"
+            keys = _load_user_api_keys(user_id)
+            provider = get_provider_for_model(request_data.get("model_name"), keys) or infer_image_api_provider(api_key)
+            provider_label_text = provider_label(provider)
 
             # Обрабатываем ошибки инициализации клиента
             try:
                 if provider == "bananalab":
                     generation_service = BananalabService(api_key=api_key)
+                elif provider == "openrouter":
+                    generation_service = OpenRouterService(api_key=api_key)
                 else:
                     generation_service = ReplicateService(api_token=api_key)
             except Exception as init_error:
-                error_msg = f"Ошибка инициализации клиента ({provider_label}): {str(init_error)}"
+                error_msg = f"Ошибка инициализации клиента ({provider_label_text}): {str(init_error)}"
                 logger.error(f"[GENERATION] {error_msg}")
                 generation.status = "failed"
                 generation.completed_at = datetime.utcnow()
@@ -439,7 +438,7 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                     )
 
                 logger.info(
-                    f"[GENERATION] Провайдер {provider_label}, модель {model_name}, генерация {generation_id}"
+                    f"[GENERATION] Провайдер {provider_label_text}, модель {model_name}, генерация {generation_id}"
                 )
                 
                 # Генерируем изображение
@@ -466,7 +465,7 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                 
                 full_error_msg = humanize_api_error(error_msg)
                 if not full_error_msg.startswith(("Banana Lab", "Ошибка провайдера", "Сервис Banana")):
-                    full_error_msg = f"Ошибка генерации ({provider_label}): {full_error_msg}"
+                    full_error_msg = f"Ошибка генерации ({provider_label_text}): {full_error_msg}"
                 
                 logger.error(f"[GENERATION] {full_error_msg}", exc_info=True)
                 generation.status = "failed"
@@ -586,7 +585,7 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
 
                 current_retries = generation.generation_metadata.get("retry_count", 0)
                 max_retries_for_error = (
-                    BANANALAB_UPSTREAM_NO_IMAGE_MAX_RETRIES
+                    settings.BANANALAB_UPSTREAM_NO_IMAGE_MAX_RETRIES
                     if upstream_no_image
                     else MAX_GENERATION_RETRIES
                 )
@@ -594,11 +593,15 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                 if is_retryable and current_retries < max_retries_for_error:
                     # Увеличиваем счетчик попыток и ставим задачу обратно в очередь
                     generation.generation_metadata["retry_count"] = current_retries + 1
+                    generation.generation_metadata["max_retries"] = max_retries_for_error
                     generation.status = "pending"
                     generation.completed_at = None
                     if upstream_no_image:
                         generation.generation_metadata["last_upstream_no_image_at"] = (
                             datetime.utcnow().isoformat()
+                        )
+                        generation.generation_metadata["error"] = (
+                            BANANALAB_UPSTREAM_NO_IMAGE_RETRY_MESSAGE
                         )
 
                     from sqlalchemy.orm.attributes import flag_modified
@@ -607,13 +610,17 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                     session.commit()
 
                     retry_delay = (
-                        BANANALAB_UPSTREAM_NO_IMAGE_RETRY_DELAY_SECONDS
+                        upstream_no_image_retry_delay_seconds(
+                            current_retries,
+                            settings.BANANALAB_UPSTREAM_NO_IMAGE_RETRY_BASE_DELAY_SECONDS,
+                        )
                         if upstream_no_image
                         else 0
                     )
                     logger.warning(
                         f"[GENERATION] Генерация {generation_id} получила временную ошибку "
-                        f"и будет автоматически повторена ({current_retries + 1}/{max_retries_for_error}): "
+                        f"и будет автоматически повторена ({current_retries + 1}/{max_retries_for_error})"
+                        f"{f', пауза {retry_delay:.0f}s' if retry_delay else ''}: "
                         f"{error_message[:200]}"
                     )
 
@@ -630,6 +637,10 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                 generation.completed_at = datetime.utcnow()
                 total_elapsed = (generation.completed_at - started_at).total_seconds()
                 generation.generation_metadata.pop("paused_request_data", None)
+
+                if upstream_no_image:
+                    error_message = BANANALAB_UPSTREAM_NO_IMAGE_EXHAUSTED_MESSAGE
+                    generation.generation_metadata["error_code"] = "upstream_no_image"
 
                 # Обрезаем слишком длинные сообщения об ошибках (максимум 2000 символов)
                 if len(error_message) > 2000:
@@ -705,10 +716,21 @@ async def generate_image(
     """
     Генерация изображения через Nano Banana Pro
     
-    Требует API ключ: Replicate (r8_…) или Banana Lab (nb_…).
+    Требует API ключ: Replicate (r8_…), Banana Lab (nb_…) или OpenRouter (sk-or_…).
     """
     try:
         logger.info(f"[GENERATION] API ключ из запроса: {'передан' if request.api_key else 'не передан'}")
+        selected_model = request.model_name if request.model_name else DEFAULT_MODEL_ID
+        keys = _load_user_api_keys(user.user_id)
+        model_provider = get_provider_for_model(selected_model, keys)
+        if not model_provider:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Для модели «{selected_model}» нет подходящего API ключа. "
+                    "Добавьте ключ в настройках."
+                ),
+            )
         api_key = _select_api_key_for_model(user.user_id, request.model_name, request.api_key)
         
         # Проверяем лимиты активных генераций по API ключу
@@ -740,12 +762,13 @@ async def generate_image(
         # Создаем запись в БД
         with db_service.get_session() as session:
             # Определяем модель для сохранения (по умолчанию "nano-banana-pro")
-            selected_model = request.model_name if request.model_name else "nano-banana-pro"
+            selected_model = request.model_name if request.model_name else DEFAULT_MODEL_ID
             logger.info(f"[GENERATION] Выбрана модель: {selected_model}")
             
             # Сохраняем выбранную модель в метаданных (для обратной совместимости)
             generation_metadata = {}
             generation_metadata['model_name'] = selected_model
+            generation_metadata['provider'] = model_provider
             generation_metadata['retry_count'] = 0
             generation_metadata['max_retries'] = MAX_GENERATION_RETRIES
             
@@ -1027,24 +1050,30 @@ async def get_available_models(
     user: Annotated[TokenPayload, Depends(auth_service.get_current_user)],
 ):
     """Получение списка доступных моделей для генерации"""
-    from app.services.ReplicateService import ReplicateService
+    _ = user
     models = {}
-    for key, model_info in ReplicateService.AVAILABLE_MODELS.items():
+    for key, entry in MODEL_REGISTRY.items():
         models[key] = {
-            "display_name": model_info["display_name"],
-            "description": model_info["description"],
-            "name": model_info["name"],
-            "providers": (
-                ["replicate", "bananalab"]
-                if key in SUPPORTED_BANANALAB_FRONTEND_MODELS
-                else ["replicate"]
-            ),
+            "display_name": entry["display_name"],
+            "description": entry["description"],
+            "name": entry.get("replicate_slug") or entry.get("openrouter_slug") or key,
+            "providers": entry.get("providers", []),
+            "color": entry.get("color", "replicate"),
+            "params_profile": entry.get("params_profile", "nano"),
+            "group": entry.get("color", "replicate"),
         }
     return {
         "models": models,
-        "default_model": ReplicateService.DEFAULT_MODEL,
+        "default_model": DEFAULT_MODEL_ID,
         "bananalab_key_prefix": "nb_",
         "replicate_key_prefix_hint": "r8_",
+        "openrouter_key_prefix_hint": "sk-or",
+        "provider_colors": {
+            "bananalab": "#f59e0b",
+            "replicate": "#3b82f6",
+            "openrouter": "#10b981",
+            "mixed": "#a855f7",
+        },
     }
 
 
@@ -1102,30 +1131,33 @@ async def get_provider_status(
     keys = _load_user_api_keys(user.user_id)
     has_replicate_key = bool(keys.get("replicate"))
     has_bananalab_key = bool(keys.get("bananalab"))
-    api_key = None
-    if has_replicate_key or has_bananalab_key:
-        try:
-            api_key = _select_api_key_for_model(user.user_id, model_name, None)
-        except Exception:
-            api_key = keys.get("bananalab") or keys.get("replicate")
-    provider = infer_image_api_provider(api_key) if api_key else "unknown"
+    has_openrouter_key = bool(keys.get("openrouter"))
+    model = (model_name or DEFAULT_MODEL_ID).strip().lower()
+    provider = get_provider_for_model(model, keys)
+    api_key = keys.get(provider) if provider else None
 
     queue_size = _queue_size()
     last_paused_at = bananalab_runtime_state.get("last_paused_at")
     last_success_at = bananalab_runtime_state.get("last_success_at")
     last_paused_error = bananalab_runtime_state.get("last_paused_error")
 
-    if provider == "unknown":
+    base_meta = {
+        "paused_queue_size": queue_size,
+        "last_paused_at": last_paused_at,
+        "last_success_at": last_success_at,
+        "has_replicate_key": has_replicate_key,
+        "has_bananalab_key": has_bananalab_key,
+        "has_openrouter_key": has_openrouter_key,
+        "model_name": model,
+    }
+
+    if not provider:
         return {
             "provider": "unknown",
             "state": "unknown",
             "can_generate": False,
-            "message": "Введите API ключ, чтобы определить состояние провайдера.",
-            "paused_queue_size": queue_size,
-            "last_paused_at": last_paused_at,
-            "last_success_at": last_success_at,
-            "has_replicate_key": has_replicate_key,
-            "has_bananalab_key": has_bananalab_key,
+            "message": "Для выбранной модели нет подходящего API ключа. Добавьте ключ в настройках.",
+            **base_meta,
         }
 
     if provider == "replicate":
@@ -1134,12 +1166,19 @@ async def get_provider_status(
             "state": "ok",
             "can_generate": True,
             "message": "Replicate: генерация доступна.",
-            "paused_queue_size": queue_size,
-            "last_paused_at": last_paused_at,
-            "last_success_at": last_success_at,
-            "has_replicate_key": has_replicate_key,
-            "has_bananalab_key": has_bananalab_key,
+            **base_meta,
         }
+
+    if provider == "openrouter":
+        return {
+            "provider": "openrouter",
+            "state": "ok",
+            "can_generate": True,
+            "message": "OpenRouter (GPT): генерация доступна.",
+            **base_meta,
+        }
+
+    _ = api_key
 
     # Banana Lab: сначала проверяем доступность хоста, затем паузу проекта
     reachable, probe_error = _bananalab_health_status()
@@ -1191,8 +1230,7 @@ async def get_provider_status(
         "paused_duration_seconds": paused_duration_seconds,
         "unavailable_since": unavailable_since,
         "unavailable_duration_seconds": unavailable_duration_seconds,
-        "has_replicate_key": has_replicate_key,
-        "has_bananalab_key": has_bananalab_key,
+        **base_meta,
     }
 
 

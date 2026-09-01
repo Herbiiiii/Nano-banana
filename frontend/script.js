@@ -8,37 +8,190 @@ let aspectRatioAutoSelected = false; // Флаг для автоматическ
 let galleryUpdateInProgress = false; // Флаг для предотвращения параллельных обновлений галереи
 let lastGalleryHash = null; // Хеш последнего состояния галереи для предотвращения ненужных обновлений
 let serverStoredProvider = 'unknown';
+let userKeyFlags = { replicate: false, bananalab: false, openrouter: false };
+let availableModelsMeta = {};
 
-// Модели Imagen: только описание, соотношение сторон, seed (без разрешения, шагов, guidance, негативного промпта, референсов)
+const PROVIDER_COLORS = {
+    bananalab: '#f59e0b',
+    replicate: '#3b82f6',
+    openrouter: '#10b981',
+    mixed: '#a855f7',
+};
+
+const PROVIDER_LABELS = {
+    bananalab: 'BananaHub (nb_)',
+    replicate: 'Replicate (r8_)',
+    openrouter: 'OpenRouter GPT (sk-or_)',
+    mixed: 'Nano Banana (nb_ или r8_)',
+};
+
+// Модели Imagen: только описание, соотношение сторон, seed
 const IMAGEN_MODEL_IDS = ['imagen-4', 'imagen-4-fast', 'imagen-4-ultra'];
+const GPT_OPENROUTER_MODEL_IDS = ['gpt-5-image', 'gpt-5-image-mini'];
 
-// С ключом BananaHub (nb_…) доступны только Nano Banana — не Replicate-only модели
-const BANANALAB_UNSUPPORTED_MODEL_IDS = ['imagen-4', 'imagen-4-fast', 'imagen-4-ultra', 'gemini-2.5-flash-image'];
-
-function isBananalabKey() {
-    return serverStoredProvider === 'bananalab';
+function hasProviderKey(provider) {
+    return !!userKeyFlags[provider];
 }
 
-/** Для BananaHub backend не принимает model в body: выбор модели в UI информационный. */
+function modelHasRequiredKey(modelId) {
+    const meta = availableModelsMeta[modelId];
+    if (!meta || !Array.isArray(meta.providers) || !meta.providers.length) {
+        return hasProviderKey('replicate') || hasProviderKey('bananalab') || hasProviderKey('openrouter');
+    }
+    return meta.providers.some((provider) => hasProviderKey(provider));
+}
+
+function resolveProviderForModel(modelId) {
+    const meta = availableModelsMeta[modelId];
+    const providers = meta?.providers || ['replicate'];
+    for (const provider of providers) {
+        if (hasProviderKey(provider)) {
+            return provider;
+        }
+    }
+    return providers[0] || 'unknown';
+}
+
+function isBananalabKey() {
+    return resolveProviderForModel(document.getElementById('modelName')?.value) === 'bananalab';
+}
+
+function renderModelProviderLegend() {
+    const legend = document.getElementById('modelProviderLegend');
+    if (!legend) return;
+    legend.innerHTML = `
+        <span class="model-legend-item model-legend-bananalab">BananaHub nb_</span>
+        <span class="model-legend-item model-legend-replicate">Replicate r8_</span>
+        <span class="model-legend-item model-legend-openrouter">OpenRouter sk-or_</span>
+    `;
+}
+
+function applyModelOptionColors(select) {
+    if (!select) return;
+    for (let i = 0; i < select.options.length; i++) {
+        const opt = select.options[i];
+        const meta = availableModelsMeta[opt.value];
+        const colorKey = meta?.color || 'replicate';
+        opt.className = `model-option-${colorKey}`;
+    }
+}
+
+/** Отключает модели без нужного ключа; переключает на первую доступную. */
 function refreshModelSelectForCurrentKey() {
     const select = document.getElementById('modelName');
     if (!select) return;
-    const bl = isBananalabKey();
+
+    applyModelOptionColors(select);
+
+    let firstEnabled = null;
     for (let i = 0; i < select.options.length; i++) {
         const opt = select.options[i];
-        opt.disabled = bl && BANANALAB_UNSUPPORTED_MODEL_IDS.includes(opt.value);
+        const enabled = modelHasRequiredKey(opt.value);
+        opt.disabled = !enabled;
+        if (enabled && !firstEnabled) {
+            firstEnabled = opt.value;
+        }
     }
-    if (bl && BANANALAB_UNSUPPORTED_MODEL_IDS.includes(select.value)) {
-        select.value = 'nano-banana-2';
-        setSelectedModel(select.value);
-        showToast('Для ключа BananaHub оставлены только Nano Banana модели. Выбрана Nano Banana 2.', 'info');
+
+    if (select.value && select.options[select.selectedIndex]?.disabled && firstEnabled) {
+        select.value = firstEnabled;
+        setSelectedModel(firstEnabled);
+        showToast('Выбрана первая модель, для которой есть API ключ', 'info');
     }
+
+    serverStoredProvider = resolveProviderForModel(select.value);
     updateParamsForModel();
+}
+
+async function loadAvailableModels() {
+    if (!authToken) {
+        renderModelProviderLegend();
+        return;
+    }
+    try {
+        const response = await fetch(`${API_URL}/images/models`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        if (!response.ok) return;
+        const data = await response.json();
+        availableModelsMeta = data.models || {};
+        if (data.provider_colors) {
+            Object.assign(PROVIDER_COLORS, data.provider_colors);
+        }
+
+        const select = document.getElementById('modelName');
+        if (!select) return;
+
+        const savedModel = getSelectedModel();
+        const groups = {
+            mixed: document.createElement('optgroup'),
+            replicate: document.createElement('optgroup'),
+            openrouter: document.createElement('optgroup'),
+        };
+        groups.mixed.label = PROVIDER_LABELS.mixed;
+        groups.replicate.label = PROVIDER_LABELS.replicate;
+        groups.openrouter.label = PROVIDER_LABELS.openrouter;
+
+        select.innerHTML = '';
+        Object.entries(availableModelsMeta).forEach(([modelId, meta]) => {
+            const option = document.createElement('option');
+            option.value = modelId;
+            option.textContent = meta.display_name || modelId;
+            const groupKey = meta.group || meta.color || 'replicate';
+            const targetGroup = groups[groupKey] || groups.replicate;
+            targetGroup.appendChild(option);
+        });
+
+        Object.values(groups).forEach((group) => {
+            if (group.children.length) {
+                select.appendChild(group);
+            }
+        });
+
+        if (savedModel && availableModelsMeta[savedModel]) {
+            select.value = savedModel;
+        } else if (data.default_model && availableModelsMeta[data.default_model]) {
+            select.value = data.default_model;
+        }
+
+        renderModelProviderLegend();
+        refreshModelSelectForCurrentKey();
+    } catch (error) {
+        console.warn('[MODELS] Не удалось загрузить список моделей:', error);
+        renderModelProviderLegend();
+        refreshModelSelectForCurrentKey();
+    }
+}
+
+async function refreshUserKeyFlags() {
+    if (!authToken) {
+        userKeyFlags = { replicate: false, bananalab: false, openrouter: false };
+        return;
+    }
+    try {
+        const response = await fetch(`${API_URL}/users/api-key`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        if (!response.ok) return;
+        const data = await response.json();
+        userKeyFlags = {
+            replicate: !!data.has_replicate_key,
+            bananalab: !!data.has_bananalab_key,
+            openrouter: !!data.has_openrouter_key,
+        };
+    } catch (error) {
+        console.warn('[API_KEY] Не удалось обновить статус ключей:', error);
+    }
 }
 
 function isImagenModel() {
     const sel = document.getElementById('modelName');
     return sel && IMAGEN_MODEL_IDS.includes(sel.value);
+}
+
+function isGptOpenRouterModel() {
+    const sel = document.getElementById('modelName');
+    return sel && GPT_OPENROUTER_MODEL_IDS.includes(sel.value);
 }
 
 /** Показывает/скрывает параметры в зависимости от выбранной модели. Недоступные параметры скрыты. */
@@ -52,29 +205,33 @@ function updateParamsForModel() {
     if (!modelSelect) return;
 
     const isImagen = IMAGEN_MODEL_IDS.includes(modelSelect.value);
+    const isGpt = GPT_OPENROUTER_MODEL_IDS.includes(modelSelect.value);
+    const limitedParams = isImagen || isGpt;
 
     if (resolutionGroup) {
-        resolutionGroup.style.display = isImagen ? 'none' : 'block';
+        resolutionGroup.style.display = limitedParams ? 'none' : 'block';
     }
     if (negativePromptGroup) {
-        negativePromptGroup.style.display = isImagen ? 'none' : 'block';
+        negativePromptGroup.style.display = limitedParams ? 'none' : 'block';
     }
     if (stepsGuidanceGroup) {
-        stepsGuidanceGroup.style.display = isImagen ? 'none' : 'block';
+        stepsGuidanceGroup.style.display = limitedParams ? 'none' : 'block';
     }
     if (referenceSection) {
         if (isImagen) {
             referenceSection.style.display = 'none';
         }
-        // Если не Imagen — видимость референсов по режиму (image-to-image) не меняем здесь
     }
     if (hintEl) {
-        if (isBananalabKey()) {
-            hintEl.textContent = 'BananaHub: используются endpoint`ы text/base64, выбор модели в UI может не влиять на backend.';
+        const provider = resolveProviderForModel(modelSelect.value);
+        if (provider === 'bananalab') {
+            hintEl.textContent = 'BananaHub: endpoint text/base64; выбор модели в UI может не влиять на backend.';
+        } else if (provider === 'openrouter') {
+            hintEl.textContent = 'OpenRouter GPT: описание, соотношение сторон, референсы (до 16). Без resolution/steps/guidance.';
+        } else if (isImagen) {
+            hintEl.textContent = 'Replicate Imagen: описание, соотношение сторон, seed. Референсы не поддерживаются.';
         } else {
-            hintEl.textContent = isImagen
-                ? 'Доступны: описание, соотношение сторон, seed. Референсы и остальные параметры не поддерживаются.'
-                : 'Доступны: все параметры (разрешение, шаги, guidance, референсы и т.д.).';
+            hintEl.textContent = 'Replicate: все параметры (разрешение, шаги, guidance, референсы и т.д.).';
         }
     }
 }
@@ -990,7 +1147,7 @@ async function loadProviderStatus() {
         if (!response.ok) return;
         const data = await response.json();
         if (authToken) {
-            serverStoredProvider = data.provider || 'unknown';
+            serverStoredProvider = data.provider || resolveProviderForModel(modelName);
         }
         banner.style.display = 'block';
 
@@ -1093,6 +1250,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     updateParamsForModel();
+    renderModelProviderLegend();
     refreshModelSelectForCurrentKey();
     loadProviderStatus();
     
@@ -1270,6 +1428,8 @@ async function loadUserInfo() {
             showUserMenu();
             toggleAdminMenuVisibility();
             checkApiKeyStatus();
+            await refreshUserKeyFlags();
+            await loadAvailableModels();
             // Загружаем галерею после успешной загрузки пользователя
             console.log('[AUTH] Загружаем галерею после успешной аутентификации...');
             await loadGallery();
@@ -1304,12 +1464,20 @@ async function checkApiKeyStatus() {
         if (!response.ok) return;
         const data = await response.json();
         if (data.has_key) {
+            userKeyFlags = {
+                replicate: !!data.has_replicate_key,
+                bananalab: !!data.has_bananalab_key,
+                openrouter: !!data.has_openrouter_key,
+            };
             const bananaState = data.has_bananalab_key ? 'есть' : 'нет';
             const replicateState = data.has_replicate_key ? 'есть' : 'нет';
-            statusDiv.innerHTML = `<span class="text-success"><i class="fas fa-check-circle me-1"></i>Ключи сохранены: BananaHub — ${bananaState}, Replicate — ${replicateState}</span>`;
+            const openrouterState = data.has_openrouter_key ? 'есть' : 'нет';
+            statusDiv.innerHTML = `<span class="text-success"><i class="fas fa-check-circle me-1"></i>Ключи сохранены: BananaHub — ${bananaState}, Replicate — ${replicateState}, OpenRouter — ${openrouterState}</span>`;
         } else {
+            userKeyFlags = { replicate: false, bananalab: false, openrouter: false };
             statusDiv.innerHTML = '<span class="text-muted"><i class="fas fa-info-circle me-1"></i>Ключи на сервере не сохранены</span>';
         }
+        refreshModelSelectForCurrentKey();
     } catch (e) {
         statusDiv.innerHTML = '<span class="text-warning"><i class="fas fa-exclamation-triangle me-1"></i>Не удалось проверить статус API ключа</span>';
     }
@@ -1969,11 +2137,12 @@ async function handleApiKeySave(e) {
     e.preventDefault();
     const bananaApiKey = document.getElementById('bananaApiKeyInput')?.value?.trim() || '';
     const replicateApiKey = document.getElementById('replicateApiKeyInput')?.value?.trim() || '';
+    const openrouterApiKey = document.getElementById('openrouterApiKeyInput')?.value?.trim() || '';
     if (!authToken) {
         showToast('Сначала выполните вход', 'error');
         return;
     }
-    if (!bananaApiKey && !replicateApiKey) {
+    if (!bananaApiKey && !replicateApiKey && !openrouterApiKey) {
         showToast('Введите хотя бы один API ключ', 'error');
         return;
     }
@@ -2004,6 +2173,19 @@ async function handleApiKeySave(e) {
                 throw new Error('Не удалось сохранить ключ Replicate');
             }
         }
+        if (openrouterApiKey) {
+            const openrouterResp = await fetch(`${API_URL}/users/api-key`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`
+                },
+                body: JSON.stringify({ api_key: openrouterApiKey, provider: 'openrouter' })
+            });
+            if (!openrouterResp.ok) {
+                throw new Error('Не удалось сохранить ключ OpenRouter');
+            }
+        }
         showToast('Ключи сохранены на сервере (зашифрованы)', 'success');
     } catch (serverErr) {
         console.warn('[API_KEY] Ошибка серверного сохранения ключа:', serverErr);
@@ -2013,8 +2195,12 @@ async function handleApiKeySave(e) {
     
     const bananaInput = document.getElementById('bananaApiKeyInput');
     const replicateInput = document.getElementById('replicateApiKeyInput');
+    const openrouterInput = document.getElementById('openrouterApiKeyInput');
     if (bananaInput) bananaInput.value = '';
     if (replicateInput) replicateInput.value = '';
+    if (openrouterInput) openrouterInput.value = '';
+    
+    await refreshUserKeyFlags();
     
     // Закрываем модальное окно
     const modal = bootstrap.Modal.getInstance(document.getElementById('apiKeyModal'));
@@ -2050,6 +2236,7 @@ async function handleApiKeyDelete() {
     } else {
         showToast('Ошибка удаления ключа', 'error');
     }
+    userKeyFlags = { replicate: false, bananalab: false, openrouter: false };
     checkApiKeyStatus();
     refreshModelSelectForCurrentKey();
     loadProviderStatus();

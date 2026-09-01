@@ -45,6 +45,7 @@ class ReplicateApiKeyResponse(BaseModel):
     has_key: bool
     has_replicate_key: Optional[bool] = None
     has_bananalab_key: Optional[bool] = None
+    has_openrouter_key: Optional[bool] = None
     selected_provider: Optional[str] = None
 
 # Генерация изображений
@@ -58,7 +59,7 @@ class ImageGenerationRequest(BaseModel):
     num_inference_steps: int = 50
     seed: Optional[int] = None
     reference_images: Optional[List[str]] = None  # URLs или base64 изображений
-    api_key: Optional[str] = None  # Replicate (r8_…) или Banana Lab (nb_…), не сохраняется в БД
+    api_key: Optional[str] = None  # Replicate (r8_…), Banana Lab (nb_…) или OpenRouter (sk-or_…)
     model_name: Optional[str] = None  # Имя модели (например, "nano-banana-pro", "gemini-2.5-flash-image")
 
 class ImageGenerationResponse(BaseModel):

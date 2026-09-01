@@ -10,9 +10,33 @@ class TestProvider(unittest.TestCase):
     def test_nb_prefix(self):
         self.assertEqual(infer_image_api_provider("nb_abc"), "bananalab")
 
+    def test_openrouter_prefix(self):
+        self.assertEqual(infer_image_api_provider("sk-or-v1-abc"), "openrouter")
+
     def test_replicate_default(self):
         self.assertEqual(infer_image_api_provider("r8_xx"), "replicate")
         self.assertEqual(infer_image_api_provider(""), "replicate")
+
+
+class TestImageModels(unittest.TestCase):
+    def test_gpt_model_requires_openrouter(self):
+        from app.services.image_models import get_provider_for_model, select_api_key_for_model
+
+        keys = {"replicate": "r8_x", "bananalab": "nb_x", "openrouter": ""}
+        self.assertIsNone(get_provider_for_model("gpt-5-image", keys))
+
+        keys["openrouter"] = "sk-or-v1-test"
+        self.assertEqual(get_provider_for_model("gpt-5-image", keys), "openrouter")
+        self.assertEqual(
+            select_api_key_for_model("gpt-5-image", keys, None),
+            "sk-or-v1-test",
+        )
+
+    def test_nano_prefers_bananalab(self):
+        from app.services.image_models import get_provider_for_model
+
+        keys = {"replicate": "r8_x", "bananalab": "nb_x", "openrouter": "sk-or_x"}
+        self.assertEqual(get_provider_for_model("nano-banana-pro", keys), "bananalab")
 
 
 class TestPrompt(unittest.TestCase):
@@ -230,7 +254,15 @@ class TestHumanizeApiError(unittest.TestCase):
         self.assertFalse(is_bananalab_upstream_no_image_message("Project is paused."))
 
         msg = humanize_api_error("Upstream returned no image")
-        self.assertIn("не вернул изображение", msg.lower())
+        self.assertIn("повторяем автоматически", msg.lower())
+
+    def test_upstream_no_image_retry_delay(self):
+        from app.services.bananalab_response import upstream_no_image_retry_delay_seconds
+
+        self.assertEqual(upstream_no_image_retry_delay_seconds(0, 3), 3.0)
+        self.assertEqual(upstream_no_image_retry_delay_seconds(1, 3), 5.0)
+        self.assertEqual(upstream_no_image_retry_delay_seconds(4, 3), 11.0)
+        self.assertEqual(upstream_no_image_retry_delay_seconds(10, 3), 15.0)
 
     def test_http_status_without_body(self):
         msg = humanize_api_error("", 503)

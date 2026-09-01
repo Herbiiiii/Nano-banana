@@ -49,6 +49,18 @@ class Settings(BaseSettings):
             return value.replace("bananahub.io", "bananahub.app")
         return value
     
+    # BananaHub: «Upstream returned no image» — flaky Gemini; ТП рекомендует несколько повторов
+    BANANALAB_UPSTREAM_NO_IMAGE_MAX_RETRIES: int = Field(
+        5, env="BANANALAB_UPSTREAM_NO_IMAGE_MAX_RETRIES"
+    )
+    BANANALAB_UPSTREAM_NO_IMAGE_RETRY_BASE_DELAY_SECONDS: float = Field(
+        3.0, env="BANANALAB_UPSTREAM_NO_IMAGE_RETRY_BASE_DELAY_SECONDS"
+    )
+
+    # OpenRouter Image API (sk-or_…)
+    OPENROUTER_HTTP_REFERER: str = Field("", env="OPENROUTER_HTTP_REFERER")
+    OPENROUTER_X_TITLE: str = Field("Nano Banana Pro", env="OPENROUTER_X_TITLE")
+
     # Performance
     # По умолчанию запускаем только одну генерацию одновременно, чтобы уменьшить вероятность E003/rate-limit
     MAX_WORKERS: int = Field(1, env="MAX_WORKERS")  # Максимум одновременных воркеров

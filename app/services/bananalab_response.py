@@ -70,6 +70,23 @@ BANANALAB_PROVIDER_UNAVAILABLE_MESSAGE = (
     "Напишите в поддержку @bananahub в Telegram."
 )
 
+BANANALAB_UPSTREAM_NO_IMAGE_RETRY_MESSAGE = (
+    "BananaHub не получил изображение от Google (временный сбой). "
+    "Повторяем автоматически — тот же запрос, без изменений."
+)
+
+BANANALAB_UPSTREAM_NO_IMAGE_EXHAUSTED_MESSAGE = (
+    "Google Gemini не вернул изображение после нескольких попыток с тем же запросом. "
+    "Это ограничение модели (иногда срабатывает на фото знаменитостей или нестабильный upstream), "
+    "а не ошибка вашего сайта. Попробуйте запустить генерацию ещё раз позже или измените формулировку вручную."
+)
+
+
+def upstream_no_image_retry_delay_seconds(retry_count: int, base_delay: float = 3.0) -> float:
+    """Экспоненциальная пауза: 3s, 5s, 8s, 12s, 15s (cap)."""
+    attempt = max(0, int(retry_count))
+    return min(float(base_delay) + attempt * 2.0, 15.0)
+
 _UNAVAILABLE_MARKERS = (
     "connection refused",
     "failed to establish a new connection",
@@ -172,10 +189,7 @@ def humanize_api_error(message: Any, http_status: Optional[int] = None) -> str:
         return BANANALAB_PROVIDER_UNAVAILABLE_MESSAGE
 
     if is_bananalab_upstream_no_image_message(text):
-        return (
-            "Провайдер BananaHub не вернул изображение (временный сбой upstream). "
-            "Попробуйте ещё раз — обычно помогает повтор."
-        )
+        return BANANALAB_UPSTREAM_NO_IMAGE_RETRY_MESSAGE
 
     status_key = str(http_status) if http_status else None
     if status_key in _CLOUDFLARE_GATEWAY_MESSAGES and http_status and http_status >= 500:

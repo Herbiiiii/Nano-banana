@@ -126,7 +126,7 @@
                                 <label for="modelName" class="form-label">
                                     <i class="fas fa-brain me-1"></i>Модель генерации
                                 </label>
-                                <select class="form-select" id="modelName">
+                                <select class="form-select model-select-colored" id="modelName">
                                     <option value="nano-banana-2">Nano Banana 2 (new)</option>
                                     <option value="nano-banana">Nano Banana</option>
                                     <option value="nano-banana-pro" selected>Nano Banana Pro</option>
@@ -134,7 +134,10 @@
                                     <option value="imagen-4">Imagen 4</option>
                                     <option value="imagen-4-fast">Imagen 4 Fast</option>
                                     <option value="imagen-4-ultra">Imagen 4 Ultra</option>
+                                    <option value="gpt-5-image">GPT-5 Image</option>
+                                    <option value="gpt-5-image-mini">GPT-5 Image Mini</option>
                                 </select>
+                                <div id="modelProviderLegend" class="model-provider-legend mt-2"></div>
                                 <div id="modelParamsHint" class="form-text text-muted small mt-1" role="status"></div>
                                 <small class="form-text text-muted">Выбор сохраняется между сессиями</small>
                             </div>
@@ -489,7 +492,10 @@
                         <strong>BananaHub:</strong> ключ с префиксом <code>nb_</code> —
                         <a href="https://bananahub.app/" target="_blank" rel="noopener" class="alert-link">bananahub.app</a>
                         (поддержка: <a href="https://t.me/bananahub" target="_blank" rel="noopener" class="alert-link">@bananahub</a>).
-                        <br><small>Провайдер выбирается автоматически по префиксу ключа. Ключ хранится на сервере в зашифрованном виде.</small>
+                        <br>
+                        <strong>OpenRouter (GPT):</strong> ключ с префиксом <code>sk-or</code> —
+                        <a href="https://openrouter.ai/keys" target="_blank" rel="noopener" class="alert-link">openrouter.ai/keys</a>.
+                        <br><small>Ключи хранятся на сервере в зашифрованном виде. Модель выбирает провайдер автоматически.</small>
                     </div>
                     <form id="apiKeyForm">
                         <div class="mb-3">
@@ -500,7 +506,12 @@
                         <div class="mb-3">
                             <label for="replicateApiKeyInput" class="form-label">Replicate API ключ</label>
                             <input type="password" class="form-control" id="replicateApiKeyInput" placeholder="r8_...">
-                            <small class="form-text text-muted">Используется как fallback, если модель недоступна в BananaHub</small>
+                            <small class="form-text text-muted">Для Imagen, Gemini и Nano Banana через Replicate</small>
+                        </div>
+                        <div class="mb-3">
+                            <label for="openrouterApiKeyInput" class="form-label">OpenRouter API ключ (GPT)</label>
+                            <input type="password" class="form-control" id="openrouterApiKeyInput" placeholder="sk-or-...">
+                            <small class="form-text text-muted">Для GPT-5 Image и GPT-5 Image Mini</small>
                         </div>
                         <div class="d-flex gap-2">
                             <button type="submit" class="btn btn-warning flex-fill">

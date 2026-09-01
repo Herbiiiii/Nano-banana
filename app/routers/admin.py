@@ -56,9 +56,11 @@ def _audit_admin_action(session, actor_admin_id: int, action: str, target_user_i
 def _infer_provider(gen: Generation) -> str:
     metadata = gen.generation_metadata or {}
     provider = (metadata.get("provider") or "").strip().lower()
-    if provider in ("replicate", "bananalab"):
+    if provider in ("replicate", "bananalab", "openrouter"):
         return provider
     model_name = (gen.model_name or "").lower()
+    if model_name.startswith("gpt-"):
+        return "openrouter"
     if model_name.startswith("imagen") or "gemini" in model_name:
         return "replicate"
     if "nano-banana" in model_name:
@@ -79,6 +81,8 @@ def _estimate_cost_usd(gen: Generation) -> float:
         "imagen-4": 0.04,
         "imagen-4-fast": 0.02,
         "imagen-4-ultra": 0.06,
+        "gpt-5-image": 0.05,
+        "gpt-5-image-mini": 0.02,
     }.get(model, 0.02)
     resolution_multiplier = {"1K": 1.0, "2K": 1.6, "4K": 2.5}.get(resolution, 1.0)
     refs_count = int(metadata.get("reference_images_count") or 0)
