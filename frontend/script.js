@@ -3047,6 +3047,8 @@ async function loadGallery() {
                                     provider: gen.provider,
                                     model_name: gen.model_name,
                                     original_prompt: gen.original_prompt,
+                                    sanitized_prompt: gen.sanitized_prompt,
+                                    sanitize_replacements: gen.sanitize_replacements,
                                     rewritten_prompt: gen.rewritten_prompt,
                                     rewrite_model: gen.rewrite_model,
                                     rewrite_error: gen.rewrite_error,
