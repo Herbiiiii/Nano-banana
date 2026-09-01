@@ -56,6 +56,72 @@ function isBananalabKey() {
     return resolveProviderForModel(document.getElementById('modelName')?.value) === 'bananalab';
 }
 
+const PROVIDER_BADGE = {
+    bananalab: 'nb_',
+    replicate: 'r8_',
+    openrouter: 'GPT',
+    mixed: 'nb+r8',
+};
+
+function inferDefaultModelMeta(modelId) {
+    if (modelId.startsWith('gpt-')) {
+        return {
+            display_name: modelId,
+            color: 'openrouter',
+            group: 'openrouter',
+            providers: ['openrouter'],
+        };
+    }
+    if (modelId.includes('nano-banana')) {
+        return {
+            display_name: modelId,
+            color: 'mixed',
+            group: 'mixed',
+            providers: ['bananalab', 'replicate'],
+        };
+    }
+    return {
+        display_name: modelId,
+        color: 'replicate',
+        group: 'replicate',
+        providers: ['replicate'],
+    };
+}
+
+function ensureModelsMetaFromSelect() {
+    if (Object.keys(availableModelsMeta).length) return;
+    const select = document.getElementById('modelName');
+    if (!select) return;
+    select.querySelectorAll('option').forEach((opt) => {
+        const id = opt.value;
+        availableModelsMeta[id] = {
+            ...inferDefaultModelMeta(id),
+            display_name: opt.textContent.trim(),
+        };
+    });
+}
+
+function modelProviderBadgeClass(colorKey) {
+    return `model-provider-badge model-badge-${colorKey || 'replicate'}`;
+}
+
+function modelProviderBadgeText(meta) {
+    const key = meta?.color || 'replicate';
+    return PROVIDER_BADGE[key] || key;
+}
+
+function closeAllCustomDropdowns(exceptMenuId) {
+    document.querySelectorAll('.custom-dropdown-selected').forEach((el) => {
+        el.classList.remove('active');
+        el.setAttribute('aria-expanded', 'false');
+    });
+    document.querySelectorAll('.custom-dropdown-menu').forEach((el) => {
+        if (!exceptMenuId || el.id !== exceptMenuId) {
+            el.classList.remove('show');
+        }
+    });
+}
+
 function renderModelProviderLegend() {
     const legend = document.getElementById('modelProviderLegend');
     if (!legend) return;
@@ -66,46 +132,113 @@ function renderModelProviderLegend() {
     `;
 }
 
-function applyModelOptionColors(select) {
-    if (!select) return;
-    for (let i = 0; i < select.options.length; i++) {
-        const opt = select.options[i];
-        const meta = availableModelsMeta[opt.value];
-        const colorKey = meta?.color || 'replicate';
-        opt.className = `model-option-${colorKey}`;
+function buildModelDropdownMenu() {
+    ensureModelsMetaFromSelect();
+    const menu = document.getElementById('modelMenu');
+    if (!menu) return;
+    menu.innerHTML = '';
+
+    const groupsOrder = [
+        { key: 'mixed', label: PROVIDER_LABELS.mixed },
+        { key: 'replicate', label: PROVIDER_LABELS.replicate },
+        { key: 'openrouter', label: PROVIDER_LABELS.openrouter },
+    ];
+    const byGroup = { mixed: [], replicate: [], openrouter: [] };
+
+    Object.entries(availableModelsMeta).forEach(([modelId, meta]) => {
+        const groupKey = meta.group || meta.color || 'replicate';
+        (byGroup[groupKey] || byGroup.replicate).push([modelId, meta]);
+    });
+
+    groupsOrder.forEach(({ key, label }) => {
+        const items = byGroup[key];
+        if (!items.length) return;
+        const groupEl = document.createElement('div');
+        groupEl.className = 'custom-dropdown-group';
+        groupEl.innerHTML = `<div class="custom-dropdown-group-label">${label}</div>`;
+        items.forEach(([modelId, meta]) => {
+            const enabled = modelHasRequiredKey(modelId);
+            const item = document.createElement('div');
+            item.className = `custom-dropdown-item model-dropdown-item model-tone-${meta.color || 'replicate'}`;
+            if (!enabled) item.classList.add('is-disabled');
+            item.dataset.value = modelId;
+            item.setAttribute('role', 'option');
+            item.innerHTML = `
+                <span class="${modelProviderBadgeClass(meta.color)}">${modelProviderBadgeText(meta)}</span>
+                <span class="model-dropdown-item-title">${meta.display_name || modelId}</span>
+                ${enabled ? '' : '<span class="model-dropdown-item-lock" title="Нужен API ключ"><i class="fas fa-lock"></i></span>'}
+            `;
+            item.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (!modelHasRequiredKey(modelId)) {
+                    showToast('Добавьте нужный API ключ в настройках', 'warning');
+                    return;
+                }
+                selectModel(modelId);
+                closeAllCustomDropdowns();
+            });
+            groupEl.appendChild(item);
+        });
+        menu.appendChild(groupEl);
+    });
+}
+
+function updateModelDropdownSelected(modelId) {
+    const meta = availableModelsMeta[modelId] || inferDefaultModelMeta(modelId);
+    const textEl = document.getElementById('modelSelectedText');
+    const badgeEl = document.getElementById('modelSelectedBadge');
+    if (textEl) textEl.textContent = meta.display_name || modelId;
+    if (badgeEl) {
+        badgeEl.className = modelProviderBadgeClass(meta.color);
+        badgeEl.textContent = modelProviderBadgeText(meta);
+    }
+    document.querySelectorAll('#modelMenu .custom-dropdown-item').forEach((item) => {
+        item.classList.toggle('selected', item.dataset.value === modelId);
+    });
+}
+
+function selectModel(modelId, options = {}) {
+    const select = document.getElementById('modelName');
+    if (!select || !modelId) return;
+    select.value = modelId;
+    setSelectedModel(modelId);
+    updateModelDropdownSelected(modelId);
+    serverStoredProvider = resolveProviderForModel(modelId);
+    updateParamsForModel();
+    if (!options.silent) {
+        select.dispatchEvent(new Event('change'));
+        loadProviderStatus();
     }
 }
 
 /** Отключает модели без нужного ключа; переключает на первую доступную. */
 function refreshModelSelectForCurrentKey() {
+    buildModelDropdownMenu();
     const select = document.getElementById('modelName');
     if (!select) return;
 
-    applyModelOptionColors(select);
-
     let firstEnabled = null;
-    for (let i = 0; i < select.options.length; i++) {
-        const opt = select.options[i];
-        const enabled = modelHasRequiredKey(opt.value);
-        opt.disabled = !enabled;
-        if (enabled && !firstEnabled) {
-            firstEnabled = opt.value;
+    Object.keys(availableModelsMeta).forEach((modelId) => {
+        if (modelHasRequiredKey(modelId) && !firstEnabled) {
+            firstEnabled = modelId;
         }
-    }
+    });
 
-    if (select.value && select.options[select.selectedIndex]?.disabled && firstEnabled) {
-        select.value = firstEnabled;
-        setSelectedModel(firstEnabled);
+    const current = select.value;
+    if (current && !modelHasRequiredKey(current) && firstEnabled) {
+        selectModel(firstEnabled);
         showToast('Выбрана первая модель, для которой есть API ключ', 'info');
+        return;
     }
-
-    serverStoredProvider = resolveProviderForModel(select.value);
-    updateParamsForModel();
+    selectModel(current || firstEnabled || 'nano-banana-pro', { silent: true });
 }
 
 async function loadAvailableModels() {
+    ensureModelsMetaFromSelect();
+    renderModelProviderLegend();
     if (!authToken) {
-        renderModelProviderLegend();
+        buildModelDropdownMenu();
+        refreshModelSelectForCurrentKey();
         return;
     }
     try {
@@ -119,48 +252,54 @@ async function loadAvailableModels() {
             Object.assign(PROVIDER_COLORS, data.provider_colors);
         }
 
-        const select = document.getElementById('modelName');
-        if (!select) return;
-
         const savedModel = getSelectedModel();
-        const groups = {
-            mixed: document.createElement('optgroup'),
-            replicate: document.createElement('optgroup'),
-            openrouter: document.createElement('optgroup'),
-        };
-        groups.mixed.label = PROVIDER_LABELS.mixed;
-        groups.replicate.label = PROVIDER_LABELS.replicate;
-        groups.openrouter.label = PROVIDER_LABELS.openrouter;
-
-        select.innerHTML = '';
-        Object.entries(availableModelsMeta).forEach(([modelId, meta]) => {
-            const option = document.createElement('option');
-            option.value = modelId;
-            option.textContent = meta.display_name || modelId;
-            const groupKey = meta.group || meta.color || 'replicate';
-            const targetGroup = groups[groupKey] || groups.replicate;
-            targetGroup.appendChild(option);
-        });
-
-        Object.values(groups).forEach((group) => {
-            if (group.children.length) {
-                select.appendChild(group);
-            }
-        });
-
         if (savedModel && availableModelsMeta[savedModel]) {
-            select.value = savedModel;
+            selectModel(savedModel, { silent: true });
         } else if (data.default_model && availableModelsMeta[data.default_model]) {
-            select.value = data.default_model;
+            selectModel(data.default_model, { silent: true });
         }
 
         renderModelProviderLegend();
         refreshModelSelectForCurrentKey();
     } catch (error) {
         console.warn('[MODELS] Не удалось загрузить список моделей:', error);
-        renderModelProviderLegend();
+        buildModelDropdownMenu();
         refreshModelSelectForCurrentKey();
     }
+}
+
+function setupModelDropdown() {
+    const selectedDiv = document.getElementById('modelSelected');
+    const menu = document.getElementById('modelMenu');
+    if (!selectedDiv || !menu) return;
+
+    const toggleMenu = (e) => {
+        e.stopPropagation();
+        if (menu.classList.contains('show')) {
+            closeAllCustomDropdowns();
+            return;
+        }
+        closeAllCustomDropdowns('modelMenu');
+        buildModelDropdownMenu();
+        selectedDiv.classList.add('active');
+        menu.classList.add('show');
+        selectedDiv.setAttribute('aria-expanded', 'true');
+    };
+
+    selectedDiv.addEventListener('click', toggleMenu);
+    selectedDiv.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            toggleMenu(e);
+        } else if (e.key === 'Escape') {
+            closeAllCustomDropdowns();
+        }
+    });
+
+    ensureModelsMetaFromSelect();
+    buildModelDropdownMenu();
+    const saved = getSelectedModel();
+    selectModel(saved || document.getElementById('modelName')?.value || 'nano-banana-pro', { silent: true });
 }
 
 async function refreshUserKeyFlags() {
@@ -1212,6 +1351,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Галерея загружается в checkAuth после проверки токена
     setupEventListeners();
     setupAspectRatioVisuals();
+    setupModelDropdown();
     setupCustomDropdown();
     
     // Проверяем API ключ при загрузке
@@ -1301,23 +1441,14 @@ function setupCustomDropdown() {
     // Обработчик клика на выбранный элемент
     selectedDiv.addEventListener('click', (e) => {
         e.stopPropagation();
-        const isActive = selectedDiv.classList.contains('active');
-        
-        // Закрываем все другие dropdown
-        document.querySelectorAll('.custom-dropdown-selected').forEach(el => {
-            if (el !== selectedDiv) {
-                el.classList.remove('active');
-            }
-        });
-        document.querySelectorAll('.custom-dropdown-menu').forEach(el => {
-            if (el !== menu) {
-                el.classList.remove('show');
-            }
-        });
-        
-        // Переключаем текущий dropdown
-        selectedDiv.classList.toggle('active');
-        menu.classList.toggle('show');
+        if (menu.classList.contains('show')) {
+            closeAllCustomDropdowns();
+            return;
+        }
+        closeAllCustomDropdowns('aspectRatioMenu');
+        selectedDiv.classList.add('active');
+        menu.classList.add('show');
+        selectedDiv.setAttribute('aria-expanded', 'true');
     });
     
     // Обработчик клика на элементы меню
@@ -1332,8 +1463,7 @@ function setupCustomDropdown() {
     // Закрытие при клике вне dropdown
     document.addEventListener('click', (e) => {
         if (!selectedDiv.contains(e.target) && !menu.contains(e.target)) {
-            selectedDiv.classList.remove('active');
-            menu.classList.remove('show');
+            closeAllCustomDropdowns();
         }
     });
     
