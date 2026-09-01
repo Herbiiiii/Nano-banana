@@ -214,6 +214,11 @@ def is_openrouter_security_policy(message: str) -> bool:
     return "security policy" in lower
 
 
+def is_policy_block_error(message: str) -> bool:
+    """Блокировка контент-фильтром (OpenRouter шлюз, Google, OpenAI и т.д.)."""
+    return is_openrouter_security_policy(message) or is_content_policy_error(message)
+
+
 def is_content_policy_error(message: str) -> bool:
     lower = (message or "").lower()
     return any(marker in lower for marker in CONTENT_POLICY_MARKERS)

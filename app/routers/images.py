@@ -16,7 +16,6 @@ from app.services.CryptoService import CryptoService
 from app.models.schemas import ImageGenerationRequest, ImageGenerationResponse, ImageResponse
 from app.services.ReplicateService import ReplicateService
 from app.services.BananalabService import BananalabService, SUPPORTED_BANANALAB_FRONTEND_MODELS
-from app.services.prompt_sanitize import sanitize_prompt
 from app.services.OpenRouterService import OpenRouterService
 from app.services.image_api_provider import infer_image_api_provider
 from app.services.image_models import (
@@ -41,6 +40,7 @@ from app.services.bananalab_response import (
     is_bananalab_paused_message,
     is_bananalab_unavailable_message,
     is_bananalab_upstream_no_image_message,
+    is_policy_block_error,
     upstream_no_image_retry_delay_seconds,
 )
 
@@ -94,82 +94,105 @@ def _rewrite_metadata_fields(metadata: Optional[dict]) -> dict:
         "rewritten_prompt": meta.get("rewritten_prompt"),
         "rewrite_model": meta.get("rewrite_model"),
         "rewrite_error": meta.get("rewrite_error"),
+        "policy_gpt_attempts": meta.get("policy_gpt_attempts"),
     }
 
 
-def _apply_prompt_rewrite(
+def _init_policy_rewrite_metadata(
+    generation,
+    session,
+    prompt: str,
+    rewrite_requested: bool,
+) -> None:
+    if not rewrite_requested:
+        return
+    if not generation.generation_metadata:
+        generation.generation_metadata = {}
+    from sqlalchemy.orm.attributes import flag_modified
+
+    generation.generation_metadata["rewrite_requested"] = True
+    generation.generation_metadata.setdefault("original_prompt", prompt)
+    generation.generation_metadata.setdefault("policy_gpt_attempts", [])
+    flag_modified(generation, "generation_metadata")
+    session.commit()
+
+
+def _record_policy_gpt_rewrite(
     generation,
     session,
     generation_id: int,
-    prompt_for_generation: str,
-    request_data: dict,
-    keys: dict,
-) -> str:
-    if not request_data.get("rewrite_prompt"):
-        return prompt_for_generation
+    attempt_num: int,
+    block_reason: str,
+    rewrite_result: dict,
+) -> None:
+    from sqlalchemy.orm.attributes import flag_modified
 
     if not generation.generation_metadata:
         generation.generation_metadata = {}
-    generation.generation_metadata["rewrite_requested"] = True
-    from sqlalchemy.orm.attributes import flag_modified
 
-    original = prompt_for_generation
-    generation.generation_metadata["original_prompt"] = original
-
-    # Шаг 1: локальная очистка триггеров (без API, всегда)
-    sanitized = sanitize_prompt(original)
-    working_prompt = sanitized["prompt"]
-    if sanitized["changed"]:
-        generation.generation_metadata["sanitized_prompt"] = working_prompt
-        generation.generation_metadata["sanitize_replacements"] = sanitized["replacements"]
-        logger.info(
-            "[GENERATION] sanitize gen=%s | ORIGINAL: %s | SANITIZED: %s | rules=%s",
-            generation_id,
-            original[:200],
-            working_prompt[:200],
-            sanitized["replacements"],
-        )
+    attempts = list(generation.generation_metadata.get("policy_gpt_attempts") or [])
+    attempts.append(
+        {
+            "attempt": attempt_num,
+            "block_reason": (block_reason or "")[:500],
+            "rewritten_prompt": rewrite_result.get("prompt"),
+            "model": rewrite_result.get("model"),
+        }
+    )
+    generation.generation_metadata["policy_gpt_attempts"] = attempts
+    generation.generation_metadata["rewritten_prompt"] = rewrite_result.get("prompt")
+    generation.generation_metadata["rewrite_model"] = rewrite_result.get("model")
+    generation.generation_metadata.pop("rewrite_error", None)
     flag_modified(generation, "generation_metadata")
     session.commit()
+    logger.info(
+        "[GENERATION] policy GPT rewrite gen=%s attempt=%s model=%s | block: %s | new: %s",
+        generation_id,
+        attempt_num,
+        rewrite_result.get("model"),
+        (block_reason or "")[:160],
+        str(rewrite_result.get("prompt") or "")[:160],
+    )
 
-    # Шаг 2: GPT-полировка через OpenRouter (опционально, если есть sk-or_)
+
+def _try_policy_gpt_rewrite(
+    generation,
+    session,
+    generation_id: int,
+    prompt: str,
+    block_reason: str,
+    keys: dict,
+) -> Optional[str]:
     openrouter_key = keys.get("openrouter")
     if not openrouter_key:
-        generation.generation_metadata["rewrite_note"] = (
-            "Локальная очистка применена. GPT-полировка пропущена — нет ключа sk-or_."
-        )
-        flag_modified(generation, "generation_metadata")
-        session.commit()
-        return working_prompt
+        return None
 
-    rewrite_result = OpenRouterService(api_key=openrouter_key).rewrite_prompt(working_prompt)
-    if rewrite_result.get("success") and rewrite_result.get("prompt"):
-        rewritten = rewrite_result["prompt"]
-        generation.generation_metadata["rewritten_prompt"] = rewritten
-        generation.generation_metadata["rewrite_model"] = rewrite_result.get("model")
-        generation.generation_metadata.pop("rewrite_error", None)
-        generation.generation_metadata.pop("rewrite_note", None)
-        flag_modified(generation, "generation_metadata")
-        session.commit()
-        logger.info(
-            "[GENERATION] rewrite OK gen=%s model=%s | SANITIZED: %s | REWRITTEN: %s",
-            generation_id,
-            rewrite_result.get("model"),
-            working_prompt[:200],
-            rewritten[:200],
-        )
-        return rewritten
-
-    err = rewrite_result.get("error") or "GPT-полировка не удалась"
-    err = humanize_api_error(err, provider="openrouter")
-    generation.generation_metadata["rewrite_error"] = err
-    generation.generation_metadata["rewrite_note"] = (
-        "GPT-полировка не прошла, для генерации использован локально очищенный промпт."
+    rewrite_result = OpenRouterService(api_key=openrouter_key).rewrite_prompt_after_block(
+        prompt,
+        block_reason,
     )
+    if rewrite_result.get("success") and rewrite_result.get("prompt"):
+        attempt_num = len(generation.generation_metadata.get("policy_gpt_attempts") or []) + 1
+        _record_policy_gpt_rewrite(
+            generation,
+            session,
+            generation_id,
+            attempt_num,
+            block_reason,
+            rewrite_result,
+        )
+        return rewrite_result["prompt"]
+
+    err = humanize_api_error(rewrite_result.get("error") or "GPT не смог переписать промпт", provider="openrouter")
+    if not generation.generation_metadata:
+        generation.generation_metadata = {}
+    generation.generation_metadata["rewrite_error"] = err
+    from sqlalchemy.orm.attributes import flag_modified
+
     flag_modified(generation, "generation_metadata")
     session.commit()
-    logger.warning("[GENERATION] rewrite FAIL gen=%s, using sanitized prompt: %s", generation_id, err)
-    return working_prompt
+    logger.warning("[GENERATION] policy GPT rewrite FAIL gen=%s: %s", generation_id, err)
+    return None
 
 
 def _is_paused_error(error_message: str) -> bool:
@@ -531,27 +554,109 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                 )
 
                 prompt_for_generation = request_data.get("prompt") or ""
-                prompt_for_generation = _apply_prompt_rewrite(
+                rewrite_requested = bool(request_data.get("rewrite_prompt"))
+                _init_policy_rewrite_metadata(
                     generation,
                     session,
-                    generation_id,
                     prompt_for_generation,
-                    request_data,
-                    keys,
+                    rewrite_requested,
                 )
-                
-                # Генерируем изображение
-                result = generation_service.generate_image(
-                    prompt=prompt_for_generation,
-                    negative_prompt=request_data.get('negative_prompt'),
-                    resolution=request_data.get('resolution', '1K'),
-                    aspect_ratio=request_data.get('aspect_ratio', '1:1'),
-                    guidance_scale=request_data.get('guidance_scale', 7.5),
-                    num_inference_steps=request_data.get('num_inference_steps', 50),
-                    seed=request_data.get('seed'),
-                    reference_images=request_data.get('reference_images'),
-                    model_name=model_name
-                )
+                max_policy_gpt = settings.MAX_POLICY_GPT_RETRIES if rewrite_requested else 0
+                policy_gpt_used = 0
+                result = None
+
+                while True:
+                    try:
+                        result = generation_service.generate_image(
+                            prompt=prompt_for_generation,
+                            negative_prompt=request_data.get('negative_prompt'),
+                            resolution=request_data.get('resolution', '1K'),
+                            aspect_ratio=request_data.get('aspect_ratio', '1:1'),
+                            guidance_scale=request_data.get('guidance_scale', 7.5),
+                            num_inference_steps=request_data.get('num_inference_steps', 50),
+                            seed=request_data.get('seed'),
+                            reference_images=request_data.get('reference_images'),
+                            model_name=model_name
+                        )
+                    except Exception as gen_error:
+                        error_msg = str(gen_error)
+                        if hasattr(gen_error, 'message'):
+                            error_msg = str(gen_error.message)
+                        elif hasattr(gen_error, 'args') and len(gen_error.args) > 0:
+                            error_msg = str(gen_error.args[0])
+
+                        full_error_msg = humanize_api_error(error_msg, provider=provider)
+                        if not full_error_msg.startswith(
+                            ("Banana Lab", "BananaHub", "OpenRouter", "Google", "Replicate", "Ошибка провайдера", "Сервис Banana", "Запрос не прошёл")
+                        ):
+                            full_error_msg = f"Ошибка генерации ({provider_label_text}): {full_error_msg}"
+
+                        logger.error(f"[GENERATION] {full_error_msg}", exc_info=True)
+                        generation.status = "failed"
+                        generation.completed_at = datetime.utcnow()
+                        if not generation.generation_metadata:
+                            generation.generation_metadata = {}
+                        generation.generation_metadata['error'] = full_error_msg
+                        from sqlalchemy.orm.attributes import flag_modified
+                        flag_modified(generation, "generation_metadata")
+                        session.commit()
+                        logger.error(f"[GENERATION] Генерация {generation_id} завершена с ошибкой генерации: {full_error_msg}")
+                        return
+
+                    if result.get('success'):
+                        break
+
+                    error_message = result.get('error')
+                    if not error_message or (isinstance(error_message, str) and error_message.strip() == ''):
+                        error_message = result.get('message') or result.get('detail') or result.get('error_message')
+                    if not error_message or (isinstance(error_message, str) and error_message.strip() == ''):
+                        error_message = 'Неизвестная ошибка генерации'
+                    if not isinstance(error_message, str):
+                        error_message = str(error_message)
+                    error_message = humanize_api_error(error_message, provider=provider)
+
+                    if result.get("unavailable") or _is_unavailable_error(error_message):
+                        break
+                    if result.get("paused") or _is_paused_error(error_message):
+                        break
+
+                    if (
+                        rewrite_requested
+                        and is_policy_block_error(error_message)
+                        and policy_gpt_used < max_policy_gpt
+                    ):
+                        if not keys.get("openrouter"):
+                            if not generation.generation_metadata:
+                                generation.generation_metadata = {}
+                            generation.generation_metadata["rewrite_error"] = (
+                                "GPT авто-переписывание недоступно — добавьте ключ sk-or_ в настройках."
+                            )
+                            from sqlalchemy.orm.attributes import flag_modified
+                            flag_modified(generation, "generation_metadata")
+                            session.commit()
+                            break
+
+                        new_prompt = _try_policy_gpt_rewrite(
+                            generation,
+                            session,
+                            generation_id,
+                            prompt_for_generation,
+                            error_message,
+                            keys,
+                        )
+                        if new_prompt and new_prompt.strip() != prompt_for_generation.strip():
+                            prompt_for_generation = new_prompt
+                            policy_gpt_used += 1
+                            logger.warning(
+                                "[GENERATION] policy block gen=%s — GPT retry %s/%s",
+                                generation_id,
+                                policy_gpt_used,
+                                max_policy_gpt,
+                            )
+                            continue
+                        break
+
+                    break
             except Exception as gen_error:
                 # Ошибка при генерации (например, неправильный API ключ, таймаут и т.д.)
                 # Улучшенное извлечение деталей ошибки

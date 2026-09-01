@@ -439,19 +439,20 @@ function buildRewriteBlockHtml(extra = {}) {
             + `<p class="mb-0 small" style="opacity: 0.9; background: rgba(102, 126, 234, 0.08); padding: 0.75rem; border-radius: 6px; word-wrap: break-word;">${escapeHtmlText(extra.original_prompt)}</p></div>`
         );
     }
-    if (extra.sanitized_prompt) {
-        const rules = Array.isArray(extra.sanitize_replacements) && extra.sanitize_replacements.length
-            ? `<p class="mb-1 small text-muted">${extra.sanitize_replacements.map((r) => escapeHtmlText(r)).join('<br>')}</p>`
-            : '';
-        blocks.push(
-            `<div class="mb-3"><p class="mb-2"><strong><i class="fas fa-filter me-2"></i>После локальной очистки триггеров:</strong></p>`
-            + `<p class="mb-0 small" style="opacity: 0.95; background: rgba(245, 158, 11, 0.12); padding: 0.75rem; border-radius: 6px; word-wrap: break-word;">${escapeHtmlText(extra.sanitized_prompt)}</p>${rules}</div>`
-        );
-    }
     if (extra.rewritten_prompt) {
         blocks.push(
-            `<div class="mb-3"><p class="mb-2"><strong><i class="fas fa-magic me-2"></i>Отправлено после GPT rewrite${extra.rewrite_model ? ` (${escapeHtmlText(extra.rewrite_model)})` : ''}:</strong></p>`
+            `<div class="mb-3"><p class="mb-2"><strong><i class="fas fa-magic me-2"></i>Отправлено после GPT (блокировка)${extra.rewrite_model ? ` — ${escapeHtmlText(extra.rewrite_model)}` : ''}:</strong></p>`
             + `<p class="mb-0 small" style="opacity: 0.95; background: rgba(16, 185, 129, 0.12); padding: 0.75rem; border-radius: 6px; word-wrap: break-word;">${escapeHtmlText(extra.rewritten_prompt)}</p></div>`
+        );
+    }
+    if (Array.isArray(extra.policy_gpt_attempts) && extra.policy_gpt_attempts.length) {
+        const attemptLines = extra.policy_gpt_attempts.map((a) => {
+            const n = a.attempt != null ? a.attempt : '?';
+            const model = a.model ? ` (${escapeHtmlText(a.model)})` : '';
+            return `<li class="small mb-1"><strong>Попытка ${n}${model}:</strong> ${escapeHtmlText(a.rewritten_prompt || '—')}</li>`;
+        }).join('');
+        blocks.push(
+            `<div class="mb-3"><p class="mb-2"><strong><i class="fas fa-redo me-2"></i>GPT retry после блокировки:</strong></p><ul class="mb-0 ps-3">${attemptLines}</ul></div>`
         );
     }
     if (extra.rewrite_error) {
@@ -465,13 +466,10 @@ function buildRewriteBlockHtml(extra = {}) {
 
 function buildRewriteHintHtml(gen) {
     if (gen.rewritten_prompt) {
-        return `<p class="mt-2 mb-0 text-info small" style="max-height: 4.5em; overflow: hidden;"><strong>GPT:</strong> ${escapeHtmlText(gen.rewritten_prompt)}</p>`;
-    }
-    if (gen.sanitized_prompt) {
-        return `<p class="mt-2 mb-0 text-warning small" style="max-height: 4.5em; overflow: hidden;"><strong>Очищено:</strong> ${escapeHtmlText(gen.sanitized_prompt)}</p>`;
+        return `<p class="mt-2 mb-0 text-info small" style="max-height: 4.5em; overflow: hidden;"><strong>GPT retry:</strong> ${escapeHtmlText(gen.rewritten_prompt)}</p>`;
     }
     if (gen.rewrite_error) {
-        return `<p class="mt-2 mb-0 text-warning small"><strong>Rewrite:</strong> ${escapeHtmlText(gen.rewrite_error)}</p>`;
+        return `<p class="mt-2 mb-0 text-warning small"><strong>GPT retry:</strong> ${escapeHtmlText(gen.rewrite_error)}</p>`;
     }
     return '';
 }
@@ -1376,11 +1374,10 @@ function bindAdminGenerationsGridEvents(grid, viewableItems) {
                         provider: gen.provider,
                         model_name: gen.model_name,
                         original_prompt: gen.original_prompt,
-                        sanitized_prompt: gen.sanitized_prompt,
-                        sanitize_replacements: gen.sanitize_replacements,
                         rewritten_prompt: gen.rewritten_prompt,
                         rewrite_model: gen.rewrite_model,
                         rewrite_error: gen.rewrite_error,
+                        policy_gpt_attempts: gen.policy_gpt_attempts,
                     }
                 );
             } catch (err) {
@@ -3047,11 +3044,10 @@ async function loadGallery() {
                                     provider: gen.provider,
                                     model_name: gen.model_name,
                                     original_prompt: gen.original_prompt,
-                                    sanitized_prompt: gen.sanitized_prompt,
-                                    sanitize_replacements: gen.sanitize_replacements,
                                     rewritten_prompt: gen.rewritten_prompt,
                                     rewrite_model: gen.rewrite_model,
                                     rewrite_error: gen.rewrite_error,
+                                    policy_gpt_attempts: gen.policy_gpt_attempts,
                                 }
                             );
                         } else {

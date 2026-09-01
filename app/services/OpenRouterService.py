@@ -18,13 +18,11 @@ OPENROUTER_IMAGES_URL = "https://openrouter.ai/api/v1/images"
 OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_ALLOWED_ASPECTS = frozenset({"1:1", "3:2", "2:3", "auto"})
 
-PROMPT_REWRITE_SYSTEM = (
-    "Ты переписываешь промпты для генерации изображений так, чтобы они проходили фильтры "
-    "безопасности Google/OpenAI. Сохраняй язык и общий смысл сцены, но обязательно: "
-    "замени имён реальных знаменитостей на обобщённые описания "
-    "(например «известный футболист в синей форме» вместо конкретного имени); "
-    "убери насилие, унижение, NSFW и провокации. "
-    "Верни ТОЛЬКО переписанный промпт, без кавычек и пояснений."
+PROMPT_REWRITE_AFTER_BLOCK_SYSTEM = (
+    "Генерация изображения была отклонена фильтром безопасности. "
+    "Перепиши промпт так, чтобы сохранить визуальный замысел (сцена, действие, настроение, стиль), "
+    "но без имён реальных людей, брендов, персонажей Marvel/DC/Disney и NSFW. "
+    "Используй только обобщённые описания. Верни ТОЛЬКО новый промпт на том же языке."
 )
 
 
@@ -162,23 +160,27 @@ class OpenRouterService:
 
         return {"success": False, "error": last_error, "retryable": True}
 
-    def rewrite_prompt(self, prompt: str) -> Dict[str, Any]:
-        """Переформулирует промпт через текстовую модель OpenRouter."""
-        text = (prompt or "").strip()
-        if not text:
-            return {"success": False, "error": "Пустой промпт"}
+    def _rewrite_model_ids(self) -> List[str]:
+        models: List[str] = []
+        seen = set()
+        primary = (settings.OPENROUTER_PROMPT_REWRITE_MODEL or "openai/gpt-4o-mini").strip()
+        fallbacks = (settings.OPENROUTER_PROMPT_REWRITE_MODEL_FALLBACKS or "").split(",")
+        for mid in [primary, *[f.strip() for f in fallbacks if f.strip()]]:
+            if mid and mid not in seen:
+                seen.add(mid)
+                models.append(mid)
+        return models or ["openai/gpt-4o-mini"]
 
-        rewrite_model = (settings.OPENROUTER_PROMPT_REWRITE_MODEL or "openai/gpt-4o-mini").strip()
+    def _chat_rewrite(self, system: str, user: str, model: str) -> Dict[str, Any]:
         payload = {
-            "model": rewrite_model,
+            "model": model,
             "messages": [
-                {"role": "system", "content": PROMPT_REWRITE_SYSTEM},
-                {"role": "user", "content": f"Rewrite this image prompt:\n\n{text}"},
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
             ],
             "max_tokens": 600,
-            "temperature": 0.3,
+            "temperature": 0.4,
         }
-
         try:
             response = requests.post(
                 OPENROUTER_CHAT_URL,
@@ -187,28 +189,72 @@ class OpenRouterService:
                 timeout=60,
             )
             if response.status_code >= 400:
-                return {"success": False, "error": self._extract_error(response)}
+                return {"success": False, "error": self._extract_error(response), "model": model}
 
             body = response.json()
             choices = body.get("choices") if isinstance(body, dict) else None
             if not isinstance(choices, list) or not choices:
-                return {"success": False, "error": "OpenRouter не вернул переформулированный промпт"}
+                return {"success": False, "error": "OpenRouter не вернул переформулированный промпт", "model": model}
 
             message = choices[0].get("message") if isinstance(choices[0], dict) else None
             rewritten = (message or {}).get("content") if isinstance(message, dict) else None
             rewritten = str(rewritten or "").strip().strip('"').strip("'")
             if not rewritten:
-                return {"success": False, "error": "OpenRouter вернул пустой промпт"}
+                return {"success": False, "error": "OpenRouter вернул пустой промпт", "model": model}
 
-            logger.info(
-                "[OPENROUTER] rewrite model=%s | original=%s | rewritten=%s",
-                rewrite_model,
-                text[:200],
-                rewritten[:200],
-            )
-            return {"success": True, "prompt": rewritten, "model": rewrite_model, "original": text}
+            return {"success": True, "prompt": rewritten, "model": model}
         except requests.RequestException as exc:
-            return {"success": False, "error": f"OpenRouter: ошибка сети — {exc}"}
+            return {"success": False, "error": f"OpenRouter: ошибка сети — {exc}", "model": model}
+
+    def rewrite_prompt_after_block(self, prompt: str, block_reason: str) -> Dict[str, Any]:
+        """GPT-переписывание после отказа фильтра; пробует несколько chat-моделей."""
+        text = (prompt or "").strip()
+        reason = (block_reason or "").strip()
+        if not text:
+            return {"success": False, "error": "Пустой промпт"}
+
+        user_message = (
+            f"Отклонённый промпт:\n{text}\n\n"
+            f"Причина отказа провайдера:\n{reason or 'content policy'}\n\n"
+            "Напиши безопасную замену для генерации изображения."
+        )
+        last_error = "Не удалось переписать промпт"
+        for model in self._rewrite_model_ids():
+            result = self._chat_rewrite(PROMPT_REWRITE_AFTER_BLOCK_SYSTEM, user_message, model)
+            if result.get("success") and result.get("prompt"):
+                logger.info(
+                    "[OPENROUTER] policy rewrite model=%s | in=%s | out=%s",
+                    model,
+                    text[:160],
+                    result["prompt"][:160],
+                )
+                return {**result, "original": text, "block_reason": reason}
+            last_error = result.get("error") or last_error
+            logger.warning("[OPENROUTER] policy rewrite failed model=%s: %s", model, last_error)
+
+        return {"success": False, "error": last_error}
+
+    def rewrite_prompt(self, prompt: str) -> Dict[str, Any]:
+        """Переформулирует промпт через текстовую модель OpenRouter (legacy/upfront)."""
+        text = (prompt or "").strip()
+        if not text:
+            return {"success": False, "error": "Пустой промпт"}
+
+        user_message = f"Rewrite this image prompt:\n\n{text}"
+        last_error = "Не удалось переписать промпт"
+        for model in self._rewrite_model_ids():
+            result = self._chat_rewrite(PROMPT_REWRITE_AFTER_BLOCK_SYSTEM, user_message, model)
+            if result.get("success") and result.get("prompt"):
+                logger.info(
+                    "[OPENROUTER] rewrite model=%s | original=%s | rewritten=%s",
+                    model,
+                    text[:200],
+                    result["prompt"][:200],
+                )
+                return {**result, "original": text}
+            last_error = result.get("error") or last_error
+
+        return {"success": False, "error": last_error}
 
     @staticmethod
     def _extract_error(response: requests.Response) -> str:

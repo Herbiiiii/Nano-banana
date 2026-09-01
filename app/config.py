@@ -61,6 +61,11 @@ class Settings(BaseSettings):
     OPENROUTER_HTTP_REFERER: str = Field("", env="OPENROUTER_HTTP_REFERER")
     OPENROUTER_X_TITLE: str = Field("Nano Banana Pro", env="OPENROUTER_X_TITLE")
     OPENROUTER_PROMPT_REWRITE_MODEL: str = Field("openai/gpt-4o-mini", env="OPENROUTER_PROMPT_REWRITE_MODEL")
+    OPENROUTER_PROMPT_REWRITE_MODEL_FALLBACKS: str = Field(
+        "google/gemini-2.0-flash-001,meta-llama/llama-3.3-70b-instruct",
+        env="OPENROUTER_PROMPT_REWRITE_MODEL_FALLBACKS",
+    )
+    MAX_POLICY_GPT_RETRIES: int = Field(2, env="MAX_POLICY_GPT_RETRIES")
 
     # Performance
     # По умолчанию запускаем только одну генерацию одновременно, чтобы уменьшить вероятность E003/rate-limit

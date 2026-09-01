@@ -92,6 +92,7 @@ class ImageResponse(BaseModel):
     rewritten_prompt: Optional[str] = None
     rewrite_model: Optional[str] = None
     rewrite_error: Optional[str] = None
+    policy_gpt_attempts: Optional[List[dict]] = None
     
     class Config:
         from_attributes = True
