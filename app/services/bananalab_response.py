@@ -37,14 +37,26 @@ def absolute_job_status_url(base_url: str, data: Dict[str, Any]) -> Optional[str
 
 
 def _normalize_bananalab_job_url(url: str, base_url: str) -> str:
-    """После миграции на bananahub.* job URL иногда приходит без префикса /api."""
+    """Job URL иногда приходит без префикса /api (legacy hosts + Moonez)."""
     if "/api/api/" in url:
         return url.replace("/api/api/", "/api/", 1)
-    for host in ("bananahub.app", "www.bananahub.app", "bananahub.io", "www.bananahub.io"):
+    for host in (
+        "api.moonez.ai",
+        "moonez.ai",
+        "bananahub.app",
+        "www.bananahub.app",
+        "bananahub.io",
+        "www.bananahub.io",
+    ):
         legacy = f"https://{host}/v1/jobs/"
         fixed = f"https://{host}/api/v1/jobs/"
         if url.startswith(legacy):
             return url.replace(legacy, fixed, 1)
+    # Старые absolute job URL на BananaHub → Moonez
+    for old_host in ("bananahub.app", "www.bananahub.app", "bananahub.io", "www.bananahub.io"):
+        old_prefix = f"https://{old_host}/api/v1/jobs/"
+        if url.startswith(old_prefix):
+            return "https://api.moonez.ai/api/v1/jobs/" + url[len(old_prefix) :]
     return url
 
 
@@ -60,18 +72,18 @@ _CLOUDFLARE_GATEWAY_MESSAGES = {
 _MAX_USER_ERROR_LEN = 500
 
 BANANALAB_PROJECT_PAUSED_MESSAGE = (
-    "Проект Banana Lab на паузе. Генерация временно недоступна — "
-    "дождитесь возобновления или обратитесь в поддержку BananaHub."
+    "Проект Moonez на паузе. Генерация временно недоступна — "
+    "дождитесь возобновления или проверьте панель https://moonez.ai"
 )
 
 BANANALAB_PROVIDER_UNAVAILABLE_MESSAGE = (
-    "BananaHub API недоступен: сервер провайдера не отвечает. "
-    "Это проблема на стороне BananaHub, не вашего аккаунта. "
-    "Напишите в поддержку @bananahub в Telegram."
+    "Moonez API недоступен: сервер провайдера не отвечает. "
+    "Это проблема на стороне Moonez, не вашего аккаунта. "
+    "Документация: https://docs.moonez.ai/"
 )
 
 BANANALAB_UPSTREAM_NO_IMAGE_RETRY_MESSAGE = (
-    "BananaHub не получил изображение от Google (временный сбой). "
+    "Moonez не получил изображение от Google (временный сбой). "
     "Повторяем автоматически — тот же запрос, без изменений."
 )
 
@@ -104,6 +116,7 @@ _UNAVAILABLE_MARKERS = (
     "connection aborted",
     "connection reset",
     "bananahub api недоступен",
+    "moonez api недоступен",
     "errno 111",
     "errno -2",
     "errno -3",

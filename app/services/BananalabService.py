@@ -1,6 +1,6 @@
 """
-Клиент HTTP API Banana Lab (https://api.bananalab.pw) для Nano Banana.
-Схема запроса — по документации Playground: POST /v1/generations.
+Клиент HTTP API Moonez (ранее BananaHub / Banana Lab) для Nano Banana.
+Нативный API: https://api.moonez.ai/api/v1 — docs: https://docs.moonez.ai/
 """
 import base64
 import json

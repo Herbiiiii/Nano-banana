@@ -32,24 +32,37 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = Field(7, env="REFRESH_TOKEN_EXPIRE_DAYS")
     PWD_SCHEMES: str = Field("bcrypt", env="PWD_SCHEMES")
     
-    # BananaLab API
-    BANANALAB_API_BASE_URL: str = Field("https://bananahub.app/api", env="BANANALAB_API_BASE_URL")
+    # Moonez API (ранее BananaLab / BananaHub → moonez.ai)
+    BANANALAB_API_BASE_URL: str = Field("https://api.moonez.ai/api", env="BANANALAB_API_BASE_URL")
 
     # Legacy поле (используется как API key из UI; имя оставлено для совместимости)
     REPLICATE_API_TOKEN: str = Field("", env="REPLICATE_API_TOKEN")
 
-    # Banana Lab (Nano Banana HTTP API)
-    BANANALAB_BASE_URL: str = Field("https://bananahub.app/api", env="BANANALAB_BASE_URL")
+    # Moonez native image API (env-имена BANANALAB_* оставлены для совместимости)
+    BANANALAB_BASE_URL: str = Field("https://api.moonez.ai/api", env="BANANALAB_BASE_URL")
 
     @field_validator("BANANALAB_BASE_URL", "BANANALAB_API_BASE_URL", mode="before")
     @classmethod
-    def _normalize_bananahub_domain(cls, value):
-        """Старый bananahub.io не резолвится — принудительно .app."""
-        if isinstance(value, str):
-            return value.replace("bananahub.io", "bananahub.app")
-        return value
+    def _normalize_moonez_domain(cls, value):
+        """BananaHub продан → Moonez; старые хосты принудительно переписываем."""
+        if not isinstance(value, str):
+            return value
+        rewritten = value
+        for old in (
+            "https://bananahub.io/api",
+            "https://www.bananahub.io/api",
+            "https://bananahub.app/api",
+            "https://www.bananahub.app/api",
+            "https://api.bananalab.pw",
+        ):
+            if rewritten.startswith(old):
+                rewritten = "https://api.moonez.ai/api" + rewritten[len(old) :]
+                break
+        rewritten = rewritten.replace("bananahub.io", "api.moonez.ai")
+        rewritten = rewritten.replace("bananahub.app", "api.moonez.ai")
+        return rewritten
     
-    # BananaHub: «Upstream returned no image» — flaky Gemini; ТП рекомендует несколько повторов
+    # Moonez/BananaHub: «Upstream returned no image» — flaky Gemini; ТП рекомендует несколько повторов
     BANANALAB_UPSTREAM_NO_IMAGE_MAX_RETRIES: int = Field(
         5, env="BANANALAB_UPSTREAM_NO_IMAGE_MAX_RETRIES"
     )

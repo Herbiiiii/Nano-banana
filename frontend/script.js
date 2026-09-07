@@ -18,7 +18,7 @@ const PROVIDER_COLORS = {
 };
 
 const PROVIDER_LABELS = {
-    bananalab: 'BananaHub (nb_)',
+    bananalab: 'Moonez (nb_)',
     replicate: 'Replicate (r8_)',
     openrouter: 'OpenRouter GPT (sk-or_)',
 };
@@ -151,7 +151,7 @@ function renderModelProviderLegend() {
     const legend = document.getElementById('modelProviderLegend');
     if (!legend) return;
     legend.innerHTML = `
-        <span class="model-legend-item model-legend-bananalab">BananaHub nb_</span>
+        <span class="model-legend-item model-legend-bananalab">Moonez nb_</span>
         <span class="model-legend-item model-legend-replicate">Replicate r8_</span>
         <span class="model-legend-item model-legend-openrouter">OpenRouter sk-or_</span>
     `;
@@ -390,7 +390,7 @@ function updateParamsForModel() {
     if (hintEl) {
         const provider = resolveProviderForModel(modelSelect.value);
         if (provider === 'bananalab') {
-            hintEl.textContent = 'BananaHub (nb_): выбранная модель идёт только через ваш nb_ ключ.';
+            hintEl.textContent = 'Moonez (nb_): выбранная модель идёт только через ваш nb_ ключ.';
         } else if (provider === 'openrouter') {
             hintEl.textContent = 'OpenRouter GPT: описание, соотношение сторон, референсы (до 16). Без resolution/steps/guidance.';
         } else if (isImagen) {
@@ -1582,10 +1582,10 @@ async function loadProviderStatus() {
 
         if (data.state === 'unavailable') {
             banner.className = 'alert alert-danger py-2 px-3 mt-2 mb-0 small';
-            text.textContent = data.message || 'BananaHub API недоступен: сервер провайдера не отвечает.';
+            text.textContent = data.message || 'Moonez API недоступен: сервер провайдера не отвечает.';
         } else if (data.state === 'paused') {
             banner.className = 'alert alert-warning py-2 px-3 mt-2 mb-0 small';
-            text.textContent = data.message || 'BananaHub: проект на паузе у провайдера.';
+            text.textContent = data.message || 'Moonez: проект на паузе у провайдера.';
         } else if (data.state === 'ok') {
             banner.className = 'alert alert-success py-2 px-3 mt-2 mb-0 small';
             text.textContent = data.message || 'Провайдер доступен, можно генерировать.';
@@ -1899,7 +1899,7 @@ async function checkApiKeyStatus() {
             const bananaState = data.has_bananalab_key ? 'есть' : 'нет';
             const replicateState = data.has_replicate_key ? 'есть' : 'нет';
             const openrouterState = data.has_openrouter_key ? 'есть' : 'нет';
-            statusDiv.innerHTML = `<span class="text-success"><i class="fas fa-check-circle me-1"></i>Ключи сохранены: BananaHub — ${bananaState}, Replicate — ${replicateState}, OpenRouter — ${openrouterState}</span>`;
+            statusDiv.innerHTML = `<span class="text-success"><i class="fas fa-check-circle me-1"></i>Ключи сохранены: Moonez — ${bananaState}, Replicate — ${replicateState}, OpenRouter — ${openrouterState}</span>`;
         } else {
             userKeyFlags = { replicate: false, bananalab: false, openrouter: false };
             statusDiv.innerHTML = '<span class="text-muted"><i class="fas fa-info-circle me-1"></i>Ключи на сервере не сохранены</span>';
@@ -2613,7 +2613,7 @@ async function handleApiKeySave(e) {
                 body: JSON.stringify({ api_key: bananaApiKey, provider: 'bananalab' })
             });
             if (!bananaResp.ok) {
-                throw new Error('Не удалось сохранить ключ BananaHub');
+                throw new Error('Не удалось сохранить ключ Moonez');
             }
         }
         if (replicateApiKey) {
@@ -3303,7 +3303,7 @@ async function retryGenerationWithFallback(id, fallbackModel) {
 
     const apiKey = getApiKey();
     if (!apiKey || apiKey.trim() === '') {
-        showToast('Введите API ключ (Replicate или BananaHub) в настройках', 'error');
+        showToast('Введите API ключ (Replicate, Moonez или OpenRouter) в настройках', 'error');
         return;
     }
 

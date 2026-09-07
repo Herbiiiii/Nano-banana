@@ -254,7 +254,7 @@ def _bananalab_health_status() -> tuple[bool, Optional[str]]:
     bananalab_runtime_state["health_probe_ok"] = reachable
     bananalab_runtime_state["health_probe_error"] = probe_error
     if not reachable:
-        _mark_bananalab_unavailable(probe_error or "BananaHub API недоступен.")
+        _mark_bananalab_unavailable(probe_error or "Moonez API недоступен.")
     return reachable, probe_error
 
 
@@ -1294,7 +1294,7 @@ async def get_available_models(
 
 @router.get("/bananahub-health")
 async def get_bananahub_health():
-    """Публичный статус BananaHub API — для баннера на главной без авторизации."""
+    """Публичный статус Moonez API — для баннера на главной без авторизации."""
     reachable, probe_error = _bananalab_health_status()
     is_unavailable = not reachable or _bananalab_is_unavailable()
     is_paused = (not is_unavailable) and _bananalab_is_paused()
@@ -1302,8 +1302,8 @@ async def get_bananahub_health():
     if is_unavailable:
         duration_hint = _format_duration_hint(_unavailable_duration_seconds(), "Недоступен уже")
         base_message = probe_error or bananalab_runtime_state.get("last_unavailable_error") or (
-            "BananaHub API недоступен: сервер провайдера не отвечает. "
-            "Это не проблема вашего аккаунта — напишите в @bananahub в Telegram."
+            "Moonez API недоступен: сервер провайдера не отвечает. "
+            "Проверьте панель https://moonez.ai и IP whitelist."
         )
         return {
             "provider": "bananalab",
@@ -1319,7 +1319,7 @@ async def get_bananahub_health():
             "state": "paused",
             "can_generate": False,
             "message": (
-                f"BananaHub: проект на паузе у провайдера.{duration_hint} "
+                f"Moonez: проект на паузе у провайдера.{duration_hint} "
                 f"Задач в очереди: {_queue_size()}. Автоповтор включён."
             ),
         }
@@ -1328,7 +1328,7 @@ async def get_bananahub_health():
         "provider": "bananalab",
         "state": "ok",
         "can_generate": True,
-        "message": "BananaHub: генерация доступна.",
+        "message": "Moonez: генерация доступна.",
     }
 
 
@@ -1414,20 +1414,20 @@ async def get_provider_status(
     if is_unavailable:
         duration_hint = _format_duration_hint(unavailable_duration_seconds, "Недоступен уже")
         base_message = probe_error or last_unavailable_error or (
-            "BananaHub API недоступен: сервер провайдера не отвечает. "
-            "Это не проблема вашего аккаунта — напишите в @bananahub в Telegram."
+            "Moonez API недоступен: сервер провайдера не отвечает. "
+            "Проверьте панель https://moonez.ai и IP whitelist."
         )
         message = base_message + duration_hint
         state = "unavailable"
     elif is_paused:
         duration_hint = _format_duration_hint(paused_duration_seconds, "На паузе уже")
         message = (
-            f"BananaHub: проект на паузе у провайдера.{duration_hint} "
+            f"Moonez: проект на паузе у провайдера.{duration_hint} "
             f"Задач в очереди: {queue_size}. Автоповтор включён."
         )
         state = "paused"
     else:
-        message = "BananaHub: генерация доступна."
+        message = "Moonez: генерация доступна."
         state = "ok"
 
     return {

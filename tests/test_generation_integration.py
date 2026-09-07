@@ -147,7 +147,7 @@ class TestBanalabJobUrl(unittest.TestCase):
         from app.services.bananalab_response import absolute_job_status_url
 
         u = absolute_job_status_url(
-            "https://bananahub.app/api",
+            "https://api.moonez.ai/api",
             {
                 "status_url": "/api/v1/jobs/019eb30e-1769-70ff-b648-e207a06b58d0",
                 "status": "queued",
@@ -155,22 +155,23 @@ class TestBanalabJobUrl(unittest.TestCase):
         )
         self.assertEqual(
             u,
-            "https://bananahub.app/api/v1/jobs/019eb30e-1769-70ff-b648-e207a06b58d0",
+            "https://api.moonez.ai/api/v1/jobs/019eb30e-1769-70ff-b648-e207a06b58d0",
         )
 
     def test_bananahub_legacy_io_host_still_supported(self):
         from app.services.bananalab_response import absolute_job_status_url
 
         u = absolute_job_status_url(
-            "https://bananahub.io/api",
+            "https://bananahub.app/api",
             {
                 "status_url": "/api/v1/jobs/019eb30e-1769-70ff-b648-e207a06b58d0",
                 "status": "queued",
             },
         )
+        # Absolute status_url on legacy host gets rewritten to Moonez
         self.assertEqual(
             u,
-            "https://bananahub.io/api/v1/jobs/019eb30e-1769-70ff-b648-e207a06b58d0",
+            "https://api.moonez.ai/api/v1/jobs/019eb30e-1769-70ff-b648-e207a06b58d0",
         )
 
     def test_absolute_status_url_from_job_id(self):

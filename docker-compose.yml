@@ -110,8 +110,8 @@ services:
       - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
       - ALGORITHM=HS256
       - REPLICATE_API_TOKEN=${REPLICATE_API_TOKEN:-}
-      - BANANALAB_BASE_URL=${BANANALAB_BASE_URL:-https://bananahub.app/api}
-      - BANANALAB_API_BASE_URL=${BANANALAB_API_BASE_URL:-https://bananahub.app/api}
+      - BANANALAB_BASE_URL=${BANANALAB_BASE_URL:-https://api.moonez.ai/api}
+      - BANANALAB_API_BASE_URL=${BANANALAB_API_BASE_URL:-https://api.moonez.ai/api}
       - MAX_WORKERS=${MAX_WORKERS:-1}
       - MAX_CONCURRENT_GENERATIONS=${MAX_CONCURRENT_GENERATIONS:-1}
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:8000}

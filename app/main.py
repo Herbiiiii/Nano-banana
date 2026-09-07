@@ -132,7 +132,7 @@ class CSPMiddleware(BaseHTTPMiddleware):
                 f"script-src {script_src}; "
                 f"style-src {style_src}; "
                 f"font-src 'self' data: https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
-                f"connect-src 'self' {api_url} {minio_url} https://replicate.delivery https://*.replicate.delivery https://api.replicate.com https://api.bananalab.pw https://bananahub.io https://bananahub.app; "
+                f"connect-src 'self' {api_url} {minio_url} https://replicate.delivery https://*.replicate.delivery https://api.replicate.com https://api.bananalab.pw https://bananahub.io https://bananahub.app https://api.moonez.ai https://cdn.moonez.ai https://openrouter.ai; "
                 f"frame-src {frame_src}; "
                 f"object-src 'none'; "
                 f"base-uri 'self'; "
@@ -145,7 +145,7 @@ class CSPMiddleware(BaseHTTPMiddleware):
                 f"script-src {script_src}; "
                 f"style-src {style_src}; "
                 f"font-src 'self' data: {api_url} https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
-                f"connect-src 'self' {api_url} {minio_url} https://replicate.delivery https://*.replicate.delivery https://api.replicate.com https://api.bananalab.pw https://bananahub.io https://bananahub.app; "
+                f"connect-src 'self' {api_url} {minio_url} https://replicate.delivery https://*.replicate.delivery https://api.replicate.com https://api.bananalab.pw https://bananahub.io https://bananahub.app https://api.moonez.ai https://cdn.moonez.ai https://openrouter.ai; "
                 f"frame-src {frame_src};"
             )
         response.headers["Content-Security-Policy"] = csp_policy
