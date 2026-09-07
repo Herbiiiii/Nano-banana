@@ -36,10 +36,12 @@ from app.services.result_storage import persist_generation_result
 from app.services.bananalab_response import (
     BANANALAB_UPSTREAM_NO_IMAGE_EXHAUSTED_MESSAGE,
     BANANALAB_UPSTREAM_NO_IMAGE_RETRY_MESSAGE,
+    BANANALAB_EMPTY_DONE_RETRY_MESSAGE,
     humanize_api_error,
     is_bananalab_paused_message,
     is_bananalab_unavailable_message,
     is_bananalab_upstream_no_image_message,
+    is_bananalab_empty_done_message,
     is_policy_block_error,
     upstream_no_image_retry_delay_seconds,
 )
@@ -785,7 +787,14 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                     not policy_block
                     and is_bananalab_upstream_no_image_message(last_raw_error or error_message)
                 )
-                is_retryable = service_retryable or upstream_no_image or (
+                empty_done = (
+                    not policy_block
+                    and (
+                        bool(result.get("empty_done"))
+                        or is_bananalab_empty_done_message(last_raw_error or error_message)
+                    )
+                )
+                is_retryable = service_retryable or upstream_no_image or empty_done or (
                     "e003" in lower_err
                     or "high demand" in lower_err
                     or "429" in lower_err
@@ -799,7 +808,7 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                 current_retries = generation.generation_metadata.get("retry_count", 0)
                 max_retries_for_error = (
                     settings.BANANALAB_UPSTREAM_NO_IMAGE_MAX_RETRIES
-                    if upstream_no_image
+                    if (upstream_no_image or empty_done)
                     else MAX_GENERATION_RETRIES
                 )
 
@@ -816,6 +825,13 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                         generation.generation_metadata["error"] = (
                             BANANALAB_UPSTREAM_NO_IMAGE_RETRY_MESSAGE
                         )
+                    elif empty_done:
+                        generation.generation_metadata["last_empty_done_at"] = (
+                            datetime.utcnow().isoformat()
+                        )
+                        generation.generation_metadata["error"] = (
+                            BANANALAB_EMPTY_DONE_RETRY_MESSAGE
+                        )
 
                     from sqlalchemy.orm.attributes import flag_modified
                     flag_modified(generation, "generation_metadata")
@@ -827,7 +843,7 @@ def process_generation_async(generation_id: int, user_id: int, request_data: dic
                             current_retries,
                             settings.BANANALAB_UPSTREAM_NO_IMAGE_RETRY_BASE_DELAY_SECONDS,
                         )
-                        if upstream_no_image
+                        if (upstream_no_image or empty_done)
                         else 0
                     )
                     logger.warning(

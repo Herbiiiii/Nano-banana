@@ -489,16 +489,20 @@ class BananalabService:
                     }
 
                 logger.error(
-                    "[BANANALAB] Не удалось извлечь изображение из ответа. Ключи верхнего уровня: %s",
+                    "[BANANALAB] Не удалось извлечь изображение из ответа. "
+                    "Ключи верхнего уровня: %s | result=%r | error=%r",
                     list(data.keys()) if isinstance(data, dict) else type(data),
+                    (data.get("result") if isinstance(data, dict) else None),
+                    (data.get("error") if isinstance(data, dict) else None),
                 )
                 return {
                     "success": False,
                     "image_url": None,
                     "image_data": None,
-                    "error": "Неожиданный формат ответа Banana Lab: нет URL и base64 изображения. "
-                    "Проверьте логи сервера (ключи JSON).",
-                    "retryable": False,
+                    "error": "Неожиданный формат ответа Moonez: нет URL и base64 изображения "
+                    "(пустой done). Обычно помогает повтор.",
+                    "retryable": True,
+                    "empty_done": True,
                 }
 
             except requests.Timeout as e:

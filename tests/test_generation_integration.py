@@ -308,6 +308,16 @@ class TestHumanizeApiError(unittest.TestCase):
         msg = humanize_api_error("Upstream returned no image")
         self.assertIn("повторяем автоматически", msg.lower())
 
+    def test_is_bananalab_empty_done_message(self):
+        from app.services.bananalab_response import is_bananalab_empty_done_message
+
+        self.assertTrue(
+            is_bananalab_empty_done_message(
+                "Неожиданный формат ответа Moonez: нет URL и base64 изображения (пустой done)."
+            )
+        )
+        self.assertFalse(is_bananalab_empty_done_message("Upstream returned no image"))
+
     def test_upstream_no_image_retry_delay(self):
         from app.services.bananalab_response import upstream_no_image_retry_delay_seconds
 

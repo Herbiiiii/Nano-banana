@@ -139,13 +139,31 @@ def is_bananalab_paused_message(text: Any) -> bool:
 
 
 def is_bananalab_upstream_no_image_message(text: Any) -> bool:
-    """BananaHub иногда возвращает failed job без картинки — обычно лечится повтором."""
+    """Moonez/BananaHub иногда возвращает failed job без картинки — обычно лечится повтором."""
     lower = str(text or "").lower()
     return (
         "upstream returned no image" in lower
         or "исходный поток не вернул изображение" in lower
         or "upstream did not return an image" in lower
     )
+
+
+def is_bananalab_empty_done_message(text: Any) -> bool:
+    """status=done без image_url/base64 — flaky ответ Moonez, лечится повтором."""
+    lower = str(text or "").lower()
+    return (
+        "неожиданный формат ответа" in lower
+        or "нет url и base64" in lower
+        or "no url and base64" in lower
+        or "empty done" in lower
+        or ("нет url" in lower and "base64" in lower)
+    )
+
+
+BANANALAB_EMPTY_DONE_RETRY_MESSAGE = (
+    "Moonez вернул done без картинки (временный сбой). "
+    "Повторяем автоматически — тот же запрос."
+)
 
 
 def _looks_like_html(text: str) -> bool:
