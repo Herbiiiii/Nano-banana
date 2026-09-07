@@ -144,7 +144,7 @@
                                 </select>
                                 <div class="custom-dropdown model-dropdown" id="modelDropdown">
                                     <div class="custom-dropdown-selected" id="modelSelected" role="button" tabindex="0" aria-haspopup="listbox" aria-expanded="false">
-                                        <span class="model-provider-badge model-badge-selected" id="modelSelectedBadge">nb_</span>
+                                        <span class="model-provider-badge model-badge-selected" id="modelSelectedBadge">bh_</span>
                                         <span class="custom-dropdown-text" id="modelSelectedText">Nano Banana Pro</span>
                                         <i class="fas fa-chevron-down custom-dropdown-arrow"></i>
                                     </div>
@@ -528,7 +528,8 @@
                         <strong>Replicate:</strong> ключ с префиксом <code>r8_</code> — 
                         <a href="https://replicate.com/account/api-tokens" target="_blank" class="alert-link">replicate.com/account/api-tokens</a>.
                         <br>
-                        <strong>Moonez (Nano Banana):</strong> ключ с префиксом <code>nb_</code> —
+                        <strong>Moonez (Nano Banana):</strong> ключ с префиксом <code>bh_</code>
+                        (старые <code>nb_</code> ещё принимаются) —
                         <a href="https://moonez.ai" target="_blank" rel="noopener" class="alert-link">moonez.ai</a>
                         (docs: <a href="https://docs.moonez.ai/" target="_blank" rel="noopener" class="alert-link">docs.moonez.ai</a>).
                         <br>
@@ -539,8 +540,8 @@
                     <form id="apiKeyForm">
                         <div class="mb-3">
                             <label for="bananaApiKeyInput" class="form-label">Moonez API ключ</label>
-                            <input type="password" class="form-control" id="bananaApiKeyInput" placeholder="nb_...">
-                            <small class="form-text text-muted">Приоритетный ключ для Nano Banana моделей (панель moonez.ai)</small>
+                            <input type="password" class="form-control" id="bananaApiKeyInput" placeholder="bh_...">
+                            <small class="form-text text-muted">Ключ из панели moonez.ai (префикс bh_)</small>
                         </div>
                         <div class="mb-3">
                             <label for="replicateApiKeyInput" class="form-label">Replicate API ключ</label>

@@ -10,6 +10,10 @@ class TestProvider(unittest.TestCase):
     def test_nb_prefix(self):
         self.assertEqual(infer_image_api_provider("nb_abc"), "bananalab")
 
+    def test_bh_prefix(self):
+        self.assertEqual(infer_image_api_provider("bh_abc"), "bananalab")
+        self.assertEqual(infer_image_api_provider("BH_ABC"), "bananalab")
+
     def test_openrouter_prefix(self):
         self.assertEqual(infer_image_api_provider("sk-or-v1-abc"), "openrouter")
 

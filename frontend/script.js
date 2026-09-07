@@ -18,7 +18,7 @@ const PROVIDER_COLORS = {
 };
 
 const PROVIDER_LABELS = {
-    bananalab: 'Moonez (nb_)',
+    bananalab: 'Moonez (bh_)',
     replicate: 'Replicate (r8_)',
     openrouter: 'OpenRouter GPT (sk-or_)',
 };
@@ -74,7 +74,7 @@ function isBananalabKey() {
 }
 
 const PROVIDER_BADGE = {
-    bananalab: 'nb_',
+    bananalab: 'bh_',
     replicate: 'r8_',
     openrouter: 'GPT',
 };
@@ -151,7 +151,7 @@ function renderModelProviderLegend() {
     const legend = document.getElementById('modelProviderLegend');
     if (!legend) return;
     legend.innerHTML = `
-        <span class="model-legend-item model-legend-bananalab">Moonez nb_</span>
+        <span class="model-legend-item model-legend-bananalab">Moonez bh_</span>
         <span class="model-legend-item model-legend-replicate">Replicate r8_</span>
         <span class="model-legend-item model-legend-openrouter">OpenRouter sk-or_</span>
     `;
@@ -390,7 +390,7 @@ function updateParamsForModel() {
     if (hintEl) {
         const provider = resolveProviderForModel(modelSelect.value);
         if (provider === 'bananalab') {
-            hintEl.textContent = 'Moonez (nb_): выбранная модель идёт только через ваш nb_ ключ.';
+            hintEl.textContent = 'Moonez (bh_): выбранная модель идёт только через ваш bh_ ключ.';
         } else if (provider === 'openrouter') {
             hintEl.textContent = 'OpenRouter GPT: описание, соотношение сторон, референсы (до 16). Без resolution/steps/guidance.';
         } else if (isImagen) {
@@ -410,7 +410,7 @@ function updateRewritePromptUI() {
 }
 
 function providerBadgeLabel(provider) {
-    if (provider === 'bananalab') return 'nb_';
+    if (provider === 'bananalab') return 'bh_';
     if (provider === 'openrouter') return 'GPT';
     if (provider === 'replicate') return 'r8_';
     return provider || '?';

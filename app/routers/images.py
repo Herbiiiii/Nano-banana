@@ -1281,7 +1281,8 @@ async def get_available_models(
     return {
         "models": models,
         "default_model": DEFAULT_MODEL_ID,
-        "bananalab_key_prefix": "nb_",
+        "bananalab_key_prefix": "bh_",
+        "bananalab_key_prefix_legacy": "nb_",
         "replicate_key_prefix_hint": "r8_",
         "openrouter_key_prefix_hint": "sk-or",
         "provider_colors": {

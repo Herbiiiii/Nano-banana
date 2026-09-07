@@ -152,13 +152,13 @@ MODEL_REGISTRY: Dict[str, dict] = {
 DEFAULT_MODEL_ID = "nano-banana-pro"
 
 PROVIDER_LABELS = {
-    "bananalab": "BananaHub",
+    "bananalab": "Moonez",
     "replicate": "Replicate",
     "openrouter": "OpenRouter",
 }
 
 PROVIDER_GROUP_LABELS = {
-    "bananalab": "BananaHub (nb_)",
+    "bananalab": "Moonez (bh_)",
     "replicate": "Replicate (r8_)",
     "openrouter": "OpenRouter GPT (sk-or_)",
 }
@@ -201,7 +201,7 @@ def select_api_key_for_model(
         return keys[provider]
 
     raise ValueError(
-        "API ключи не найдены. Сохраните ключ BananaHub (nb_), Replicate (r8_) "
+        "API ключи не найдены. Сохраните ключ Moonez (bh_), Replicate (r8_) "
         "и/или OpenRouter (sk-or_) в настройках."
     )
 
